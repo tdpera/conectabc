@@ -1,6 +1,6 @@
 "use client";
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
@@ -24,6 +24,27 @@ const SCENE_TIMEOUT = 4500;
 
 const LINES = [["Seu", "próximo"], ["parceiro", "está"], ["aqui", "perto."]];
 const PLAYED = "conectabc:intro-played";
+/** Reserva para navegadores com sessionStorage bloqueado. */
+let playedHere = false;
+
+/** A abertura toca uma vez por sessão; `?intro=3d|svg` força a repetição. */
+function alreadyPlayed() {
+  if (new URLSearchParams(window.location.search).has("intro")) return false;
+  try {
+    return playedHere || sessionStorage.getItem(PLAYED) === "1";
+  } catch {
+    return playedHere;
+  }
+}
+
+function markPlayed() {
+  playedHere = true;
+  try {
+    sessionStorage.setItem(PLAYED, "1");
+  } catch {}
+}
+
+const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 /** Renderizadores por software (sem GPU) não aguentam a abertura 3D com fluidez. */
 function softwareRenderer() {
@@ -60,6 +81,10 @@ export function Hero({ businesses, ready, locked }: { businesses: DirectoryEntry
   const [intro, setIntro] = useState(true);
   const [pending, setPending] = useState(true);
   const tl = useRef<gsap.core.Timeline | null>(null);
+  /** Decidido uma vez por montagem: pular direto para a cena final? */
+  const skipIntro = useRef<boolean | null>(null);
+  /** Posição da abertura, para continuar (e não recomeçar) se os dados mudarem. */
+  const elapsed = useRef(0);
   const router = useRouter();
   const [mode, setMode] = useState<"pending" | "3d" | "svg">("pending");
   const [sceneReady, setSceneReady] = useState(false);
@@ -117,23 +142,28 @@ export function Hero({ businesses, ready, locked }: { businesses: DirectoryEntry
     setIntro(false);
     (window as unknown as { __introDone?: boolean }).__introDone = true;
     window.dispatchEvent(new Event(INTRO_DONE));
-    try {
-      sessionStorage.setItem(PLAYED, "1");
-    } catch {}
+    markPlayed();
   };
+
+  // Já viu a abertura: texto e cabeçalho aparecem na hora, sem esperar a cena 3D.
+  useIsoLayoutEffect(() => {
+    skipIntro.current ??= alreadyPlayed();
+    if (!skipIntro.current) return;
+    setPending(false);
+    finish();
+  }, []);
 
   useGSAP(
     () => {
       if (!ready || mode === "pending" || (mode === "3d" && !sceneReady)) return;
       const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      let played = false;
-      try {
-        played = sessionStorage.getItem(PLAYED) === "1";
-      } catch {}
+      const skipNow = reduce || !!skipIntro.current;
+      markPlayed(); // no início: sair no meio também conta
+      const resumeAt = elapsed.current;
 
       const q = gsap.utils.selector(root);
       const r = { v: 0 };
-      const t = gsap.timeline({ defaults: { ease: "expo.out" }, onComplete: finish });
+      const t = gsap.timeline({ defaults: { ease: "expo.out" }, onComplete: finish, onUpdate: () => (elapsed.current = t.time()) });
       tl.current = t;
 
       gsap.set(q(".bm-arc"), { strokeDashoffset: 1 });
@@ -175,7 +205,8 @@ export function Hero({ businesses, ready, locked }: { businesses: DirectoryEntry
         t.to(q(".h-fade"), { autoAlpha: 1, y: 0, filter: "blur(0px)", duration: 1.0, stagger: 0.1 }, 5.2);
         t.add(() => window.dispatchEvent(new Event(INTRO_DONE)), 5.4);
 
-        if (played) t.timeScale(3.2);
+        if (skipNow) t.progress(1);
+        else if (resumeAt > 0) t.time(resumeAt);
 
         gsap.to(q(".hero-content"), {
           yPercent: -18, opacity: 0, ease: "none",
@@ -209,8 +240,8 @@ export function Hero({ businesses, ready, locked }: { businesses: DirectoryEntry
       t.to(q(".h-fade"), { autoAlpha: 1, y: 0, filter: "blur(0px)", duration: 1.0, stagger: 0.1 }, 1.5);
       t.add(() => window.dispatchEvent(new Event(INTRO_DONE)), 2.0);
 
-      if (reduce) t.progress(1);
-      else if (played) t.timeScale(3.2);
+      if (skipNow) t.progress(1);
+      else if (resumeAt > 0) t.time(resumeAt);
 
       // Saída com o scroll
       gsap.to(q(".hero-content"), {
@@ -226,7 +257,7 @@ export function Hero({ businesses, ready, locked }: { businesses: DirectoryEntry
       window.addEventListener("keydown", skip);
       return () => window.removeEventListener("keydown", skip);
     },
-    { scope: root, dependencies: [ready, pins.length, mode, sceneReady] },
+    { scope: root, dependencies: [ready, pins.length, mode, sceneReady], revertOnUpdate: true },
   );
 
   return (

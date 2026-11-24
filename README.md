@@ -13,7 +13,7 @@ Sem chaves configuradas, o app sobe em **modo demonstração**: 40 negócios fic
 
 ## Tour para avaliação
 
-1. **Abertura** (`/`): milhares de partículas formam o logotipo, explodem e pousam na costa real da baía; a câmera inclina, um skyline de pilares de luz sobe em cada negócio e arcos os conectam. Passe o mouse num pilar para ver o nome e clique para abrir o perfil. `Esc` pula. Em aparelhos sem aceleração de GPU (ou com movimento reduzido) a abertura usa a versão em SVG; force com `?intro=3d` ou `?intro=svg`.
+1. **Abertura** (`/`): milhares de partículas formam o logotipo, explodem e pousam na costa real da baía; a câmera inclina, um skyline de pilares de luz sobe em cada negócio e arcos os conectam. Passe o mouse num pilar para ver o nome e clique para abrir o perfil. `Esc` pula. Toca uma vez por sessão (aba); `?intro=3d` ou `?intro=svg` repete. Em aparelhos sem aceleração de GPU (ou com movimento reduzido) a abertura usa a versão em SVG; force com `?intro=3d` ou `?intro=svg`.
 2. Role a página: contadores em odômetro, celular fixo que conta os 3 passos, faixa de segmentos, holofote nos cartões, relógio até 15/01/2027.
 3. **Explorar** (`/explorar`): busca, filtros, "Perto de mim" (distância real), passar o mouse num cartão voa até o pin.
 4. Entre como **Membro** (Demo → Membro). Abra uma conversa e mande uma mensagem: o outro negócio responde. Proponha uma parceria num perfil e aceite uma em **Parcerias** (🎉).
