@@ -1,11 +1,12 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { SUPABASE_PUBLIC_KEY, SUPABASE_URL } from "@/lib/supabase-env";
 
 /** Mantém a sessão do Supabase renovada (somente fora do modo demonstração). */
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next({ request: req });
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const url = SUPABASE_URL;
+  const key = SUPABASE_PUBLIC_KEY;
   if (!url || !key || process.env.NEXT_PUBLIC_DEMO === "1") return res;
   const sb = createServerClient(url, key, {
     cookies: {
