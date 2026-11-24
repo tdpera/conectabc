@@ -443,7 +443,7 @@ body {
 }
 .spotlight:hover .spot-card::after { opacity: 1; }
 
-.leaflet-container,
+body .leaflet-container,
 .leaflet-container .leaflet-control,
 .leaflet-container .leaflet-control a,
 .leaflet-container .leaflet-tooltip,
