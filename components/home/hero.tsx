@@ -1,6 +1,7 @@
 "use client";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
@@ -11,13 +12,31 @@ import { decorativePins, type BayPin } from "@/lib/bay";
 import { LinkButton, Magnetic } from "@/components/ui/button";
 import { INTRO_DONE } from "@/components/app/header";
 import type { DirectoryEntry } from "@/lib/backend/types";
+import { initialIntro, type IntroState } from "@/lib/intro-state";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
 const OceanScene = dynamic(() => import("./ocean-scene"), { ssr: false });
+const IntroScene = dynamic(() => import("./intro-scene"), { ssr: false });
+/** Tempo máximo esperando a cena 3D antes de cair para a abertura em SVG. */
+const SCENE_TIMEOUT = 2600;
 
 const LINES = [["Seu", "próximo"], ["parceiro", "está"], ["aqui", "perto."]];
 const PLAYED = "conectabc:intro-played";
+
+/** Renderizadores por software (sem GPU) não aguentam a abertura 3D com fluidez. */
+function softwareRenderer() {
+  try {
+    const c = document.createElement("canvas");
+    const gl = (c.getContext("webgl2") || c.getContext("webgl")) as WebGLRenderingContext | null;
+    if (!gl) return true;
+    const ext = gl.getExtension("WEBGL_debug_renderer_info");
+    const name = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+    return /swiftshader|llvmpipe|software|basic render/i.test(name);
+  } catch {
+    return true;
+  }
+}
 
 function webglOk() {
   try {
@@ -40,6 +59,12 @@ export function Hero({ businesses, ready, locked }: { businesses: DirectoryEntry
   const [intro, setIntro] = useState(true);
   const [pending, setPending] = useState(true);
   const tl = useRef<gsap.core.Timeline | null>(null);
+  const router = useRouter();
+  const [mode, setMode] = useState<"pending" | "3d" | "svg">("pending");
+  const [sceneReady, setSceneReady] = useState(false);
+  const introState = useRef<IntroState>(initialIntro());
+  const hoverId = useRef<string | null>(null);
+  const [hovering, setHovering] = useState(false);
 
   const pins: BayPin[] = useMemo(() => {
     if (!ready) return [];
@@ -56,17 +81,34 @@ export function Hero({ businesses, ready, locked }: { businesses: DirectoryEntry
 
   const [glReady, setGlReady] = useState(false);
   useEffect(() => {
-    // Carrega o three.js só quando o navegador estiver ocioso: o pôster em CSS cobre o início.
     const ok = webglOk();
-    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number };
-    if (ok) {
-      if (w.requestIdleCallback) w.requestIdleCallback(() => setGl(true), { timeout: 1500 });
-      else setTimeout(() => setGl(true), 600);
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const force = new URLSearchParams(window.location.search).get("intro");
+    const can3d = force === "3d" || (force !== "svg" && ok && !softwareRenderer());
+    if (can3d && !reduce) setMode("3d");
+    else {
+      setMode("svg");
+      // Sem a abertura 3D, a água ainda carrega quando o navegador estiver ocioso.
+      const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number };
+      if (ok) {
+        if (w.requestIdleCallback) w.requestIdleCallback(() => setGl(true), { timeout: 1500 });
+        else setTimeout(() => setGl(true), 600);
+      }
     }
     const io = new IntersectionObserver(([e]) => setActive(e.isIntersecting), { threshold: 0 });
     if (root.current) io.observe(root.current);
     return () => io.disconnect();
   }, []);
+
+  // Se a cena 3D não ficar pronta a tempo, usa a abertura em SVG.
+  useEffect(() => {
+    if (mode !== "3d" || sceneReady) return;
+    const t = setTimeout(() => {
+      setMode("svg");
+      setGl(true);
+    }, SCENE_TIMEOUT);
+    return () => clearTimeout(t);
+  }, [mode, sceneReady]);
 
   const finish = () => {
     setIntro(false);
@@ -79,7 +121,7 @@ export function Hero({ businesses, ready, locked }: { businesses: DirectoryEntry
 
   useGSAP(
     () => {
-      if (!ready) return;
+      if (!ready || mode === "pending" || (mode === "3d" && !sceneReady)) return;
       const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       let played = false;
       try {
@@ -99,6 +141,47 @@ export function Hero({ businesses, ready, locked }: { businesses: DirectoryEntry
       gsap.set(q(".h-fade"), { opacity: 0, y: 26, filter: "blur(8px)" });
       setPending(false);
 
+      if (mode === "3d") {
+        const s = introState.current;
+        Object.assign(s, initialIntro());
+        // 1. Preto → água; partículas acordam
+        t.to(s, { reveal: 1, duration: 2.2, ease: "power2.inOut" }, 0);
+        // 2. Partículas formam o logotipo
+        t.to(s, { logo: 1, duration: 1.35, ease: "none" }, 0.45);
+        // 3. Explosão + clarão
+        t.to(s, { burst: 1, duration: 0.7, ease: "power3.out" }, 1.8);
+        t.to(s, { flash: 1, duration: 0.1, ease: "power2.out" }, 1.8);
+        t.to(s, { flash: 0, duration: 0.7, ease: "power2.in" }, 1.9);
+        t.fromTo(q(".hero-flash"), { opacity: 0, scale: 0.6 }, { opacity: 0.55, scale: 1, duration: 0.12, ease: "power2.out" }, 1.8);
+        t.to(q(".hero-flash"), { opacity: 0, scale: 1.6, duration: 0.9, ease: "power2.out" }, 1.92);
+        // 4. Pousam na baía enquanto a câmera inclina
+        t.to(s, { coast: 1, duration: 1.5, ease: "none" }, 2.05);
+        t.to(s, { tilt: 1, duration: 1.9, ease: "power3.inOut" }, 2.15);
+        t.to(s, { grid: 1, duration: 1.2, ease: "power2.out" }, 2.4);
+        t.to(s, { settle: 1, duration: 1.7, ease: "power2.inOut" }, 2.6);
+        // 5. Skyline de luz e a rede
+        t.to(s, { rise: 1, duration: 1.3, ease: "none" }, 3.0);
+        t.to(s, { draw: 1, duration: 1.3, ease: "none" }, 3.45);
+        // 6. Manchete
+        t.to(q(".hw"), { yPercent: 0, rotate: 0, duration: 1.3, stagger: 0.075 }, 3.55);
+        t.to(q(".hw"), { fontWeight: 760, duration: 1.6, ease: "power2.out", stagger: 0.075 }, 3.75);
+        t.to(q(".h-fade"), { opacity: 1, y: 0, filter: "blur(0px)", duration: 1.0, stagger: 0.1 }, 4.05);
+        t.add(() => window.dispatchEvent(new Event(INTRO_DONE)), 4.3);
+
+        if (played) t.timeScale(3.2);
+
+        gsap.to(q(".hero-content"), {
+          yPercent: -18, opacity: 0, ease: "none",
+          scrollTrigger: { trigger: root.current, start: "top top", end: "bottom top", scrub: true },
+        });
+        gsap.to(s, { scroll: 1, ease: "none", scrollTrigger: { trigger: root.current, start: "top top", end: "bottom top", scrub: true } });
+
+        const skip3d = (e: KeyboardEvent) => e.key === "Escape" && t.progress(1);
+        window.addEventListener("keydown", skip3d);
+        return () => window.removeEventListener("keydown", skip3d);
+      }
+
+      // ---- Abertura em SVG (sem WebGL, movimento reduzido ou cena lenta) ----
       // 1. Preto → água (o pôster acompanha enquanto o WebGL carrega)
       t.fromTo(q(".hero-poster"), { opacity: 0 }, { opacity: 1, duration: 2.0, ease: "power2.inOut" }, 0);
       t.to(r, { v: 1, duration: 2.4, ease: "power2.inOut", onUpdate: () => (reveal.current = r.v) }, 0);
@@ -136,13 +219,18 @@ export function Hero({ businesses, ready, locked }: { businesses: DirectoryEntry
       window.addEventListener("keydown", skip);
       return () => window.removeEventListener("keydown", skip);
     },
-    { scope: root, dependencies: [ready, pins.length] },
+    { scope: root, dependencies: [ready, pins.length, mode, sceneReady] },
   );
 
   return (
     <section
       ref={root}
       className={`${pending ? "intro-pending " : ""}relative isolate h-[100svh] min-h-[680px] overflow-hidden bg-[#01141a] text-white`}
+      onClick={(e) => {
+        if (!hoverId.current || (e.target as HTMLElement).closest("a,button")) return;
+        router.push(`/negocio/${hoverId.current}`);
+      }}
+      style={{ cursor: hovering ? "pointer" : undefined }}
       onPointerMove={(e) => {
         const r = e.currentTarget.getBoundingClientRect();
         const x = (e.clientX - r.left) / r.width;
@@ -156,28 +244,50 @@ export function Hero({ businesses, ready, locked }: { businesses: DirectoryEntry
       <div
         className="hero-poster absolute inset-0 transition-opacity duration-1000"
         style={{
-          opacity: glReady ? 0 : undefined,
+          opacity: mode !== "svg" || glReady ? 0 : undefined,
           background:
             "radial-gradient(80% 60% at 80% 0%, rgba(255,140,100,.25), transparent 60%), radial-gradient(120% 80% at 50% 0%, #0f6f73 0%, #0b4f5c 30%, #03222b 70%, #01141a 100%)",
         }}
       />
-      {gl && (
+      {mode === "3d" && ready && (
+        <div className="hero-map absolute inset-0 transition-opacity duration-700" style={{ opacity: sceneReady ? 1 : 0 }}>
+          <IntroScene
+            intro={introState}
+            mouse={mouse}
+            pins={pins}
+            active={active}
+            interactive={!locked}
+            onReady={() => setSceneReady(true)}
+            onHover={(id) => {
+              hoverId.current = id;
+              setHovering(!!id);
+            }}
+          />
+        </div>
+      )}
+      <div className="hero-flash pointer-events-none absolute left-1/2 top-1/2 size-[140vmax] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-0" style={{ background: "radial-gradient(circle, rgba(230,255,250,.9) 0%, rgba(63,208,201,.35) 18%, transparent 45%)" }} />
+      {gl && mode === "svg" && (
         <div className="absolute inset-0 transition-opacity duration-1000" style={{ opacity: glReady ? 1 : 0 }}>
           <OceanScene reveal={reveal} mouse={mouse} active={active} onReady={() => setTimeout(() => setGlReady(true), 120)} />
         </div>
       )}
 
       {/* Mapa da baía */}
+      {mode === "svg" && (
       <div className="hero-map pointer-events-none absolute inset-x-0 bottom-[-8%] top-[34%] opacity-70 sm:top-[28%] lg:inset-y-0 lg:left-[44%] lg:right-[-6%] lg:top-0 lg:opacity-100" style={{ perspective: 1200 }}>
         <motion.div className="pointer-events-auto mx-auto h-full w-full max-w-[720px]" style={{ rotateX: rx, rotateY: ry, transformStyle: "preserve-3d" }}>
           {ready && <BayMap pins={pins} className="h-full w-full" interactive={!locked} />}
         </motion.div>
       </div>
+      )}
+
+      {/* Véu para legibilidade no celular, onde o texto fica sobre a cena */}
+      <div className="h-fade pointer-events-none absolute inset-0 bg-gradient-to-b from-[#01141a]/80 via-[#01141a]/55 to-[#01141a]/10 lg:hidden" />
 
       {/* Conteúdo */}
-      <div className="hero-content relative z-10 mx-auto flex h-full max-w-7xl flex-col justify-center px-5 pt-16 sm:px-8 lg:pt-10">
+      <div className="hero-content relative z-10 mx-auto flex h-full max-w-7xl flex-col justify-center px-5 pt-24 sm:px-8 lg:pt-10">
         <div className="max-w-[640px]">
-          <div className="h-fade mb-6 inline-flex items-center gap-2 rounded-full glass-dark px-3 py-1.5 text-[13px] font-medium text-white/90">
+          <div className="h-fade mb-5 inline-flex items-center gap-2 rounded-full glass-dark px-3 py-1.5 text-[13px] font-medium text-white/90">
             <span className="relative flex size-2">
               <span className="absolute inline-flex size-full animate-ping rounded-full bg-aqua opacity-70" />
               <span className="relative inline-flex size-2 rounded-full bg-aqua" />
@@ -193,7 +303,7 @@ export function Hero({ businesses, ready, locked }: { businesses: DirectoryEntry
             )}
           </div>
 
-          <h1 className="font-display text-[3.3rem] leading-[0.92] tracking-[-0.045em] sm:text-7xl lg:text-[6.2rem]" aria-label="Seu próximo parceiro está aqui perto.">
+          <h1 className="font-display text-[2.9rem] leading-[0.92] tracking-[-0.045em] sm:text-7xl lg:text-[6.2rem]" aria-label="Seu próximo parceiro está aqui perto.">
             {LINES.map((line, i) => (
               <span key={i} className="block" aria-hidden>
                 {line.map((w, j) => (

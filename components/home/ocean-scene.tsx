@@ -78,7 +78,7 @@ void main(){
 }
 `;
 
-function Water({ reveal, mouse }: { reveal: React.RefObject<number>; mouse: React.RefObject<[number, number]> }) {
+export function Water({ reveal, mouse }: { reveal: React.RefObject<number>; mouse: React.RefObject<[number, number]> }) {
   const { size } = useThree();
   const mat = useRef<THREE.ShaderMaterial>(null);
   const uniforms = useMemo(
