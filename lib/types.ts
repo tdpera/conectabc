@@ -105,14 +105,32 @@ export interface Conversation {
   unread: number;
 }
 
+export interface Profile {
+  id: string;
+  email: string;
+  name: string;
+  isAdmin: boolean;
+  /** null na demonstração, que não guarda a data da conta. */
+  createdAt: string | null;
+}
+
+/** Uma conta cadastrada; `business` é null enquanto ela não registrou o negócio. */
 export interface AdminRow {
-  business: Business;
+  userId: string;
+  ownerName: string;
   ownerEmail: string;
+  joinedAt: string | null;
+  business: Business | null;
   subscription: SubscriptionStatus;
 }
 
 export interface AdminStats {
+  totalAccounts: number;
   totalBusinesses: number;
+  partnershipsAccepted: number;
+  partnershipsPending: number;
+  /** Só a contagem: o painel não lê o conteúdo das conversas. */
+  messages: number;
   activeSubscribers: number;
   earlyRegistrations: number;
   projectedMrr: number;

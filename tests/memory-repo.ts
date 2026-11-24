@@ -1,9 +1,9 @@
 import type { Repo } from "@/lib/core";
-import type { Business, Message, Partnership, Subscription } from "@/lib/types";
+import type { Business, Message, Partnership, Profile, Subscription } from "@/lib/types";
 import { RuleError } from "@/lib/rules";
 
-export function memoryRepo(seed: { businesses?: Business[]; subs?: Subscription[] } = {}) {
-  const db = { businesses: [...(seed.businesses ?? [])], messages: [] as Message[], partnerships: [] as Partnership[], subs: [...(seed.subs ?? [])] };
+export function memoryRepo(seed: { businesses?: Business[]; subs?: Subscription[]; profiles?: Profile[] } = {}) {
+  const db = { businesses: [...(seed.businesses ?? [])], messages: [] as Message[], partnerships: [] as Partnership[], subs: [...(seed.subs ?? [])], profiles: [...(seed.profiles ?? [])] };
   let n = 0;
   const id = (p: string) => `${p}${++n}`;
   const repo: Repo = {
@@ -43,7 +43,12 @@ export function memoryRepo(seed: { businesses?: Business[]; subs?: Subscription[
     },
     getSubscription: async (u) => db.subs.find((s) => s.userId === u) ?? null,
     listSubscriptions: async () => db.subs,
-    ownerEmails: async () => ({}),
+    listProfiles: async () => db.profiles,
+    activityCounts: async () => ({
+      accepted: db.partnerships.filter((p) => p.status === "accepted").length,
+      pending: db.partnerships.filter((p) => p.status === "pending").length,
+      messages: db.messages.length,
+    }),
   };
   return { repo, db };
 }

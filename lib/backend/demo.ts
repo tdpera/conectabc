@@ -152,9 +152,13 @@ const repo: Repo = {
   async listSubscriptions() {
     return clone(load().subscriptions);
   },
-  async ownerEmails(ids) {
-    const set = new Set(ids);
-    return Object.fromEntries(load().users.filter((u) => set.has(u.id)).map((u) => [u.id, u.email]));
+  async listProfiles() {
+    return clone(load().users.map((u) => ({ ...u, createdAt: null })));
+  },
+  async activityCounts() {
+    const d = load();
+    const n = (s: string) => d.partnerships.filter((p) => p.status === s).length;
+    return { accepted: n("accepted"), pending: n("pending"), messages: d.messages.length };
   },
 };
 

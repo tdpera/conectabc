@@ -10,7 +10,7 @@ import {
 } from "./rules";
 import type {
   AdminStats, Business, BusinessInput, Conversation, Message, Partnership,
-  PartnershipStatus, PartnershipType, PublicBusiness, Subscription,
+  PartnershipStatus, PartnershipType, Profile, PublicBusiness, Subscription,
 } from "./types";
 import type { DirectoryResult, PartnershipsResult, DirectoryEntry } from "./backend/types";
 import { PARTNERSHIP_TYPES } from "./categories";
@@ -39,7 +39,8 @@ export interface Repo {
 
   getSubscription(userId: string): Promise<Subscription | null>;
   listSubscriptions(): Promise<Subscription[]>;
-  ownerEmails(ids: string[]): Promise<Record<string, string>>;
+  listProfiles(): Promise<Profile[]>;
+  activityCounts(): Promise<{ accepted: number; pending: number; messages: number }>;
 }
 
 export interface Ctx {
@@ -199,18 +200,35 @@ export async function cancel(ctx: Ctx, id: string): Promise<Partnership> {
 
 export async function adminStats(ctx: Ctx, config: AdminStats["config"], mode: AdminStats["mode"]): Promise<AdminStats> {
   if (!ctx.isAdmin) throw new RuleError("Acesso restrito.", 403);
-  const [all, subs] = await Promise.all([ctx.repo.listBusinesses(DIRECTORY_LIMIT), ctx.repo.listSubscriptions()]);
+  const [all, subs, profiles, counts] = await Promise.all([
+    ctx.repo.listBusinesses(DIRECTORY_LIMIT), ctx.repo.listSubscriptions(), ctx.repo.listProfiles(), ctx.repo.activityCounts(),
+  ]);
   const byUser = new Map(subs.map((s) => [s.userId, s]));
-  const emails = await ctx.repo.ownerEmails(all.map((b) => b.ownerId));
+  const byOwner = new Map(all.map((b) => [b.ownerId, b]));
+  const known = new Set(profiles.map((p) => p.id));
+  const row = (id: string, p: Profile | null, b: Business | null): AdminStats["rows"][number] => ({
+    userId: id, ownerName: p?.name ?? "", ownerEmail: p?.email ?? "—", joinedAt: p?.createdAt ?? b?.createdAt ?? null,
+    business: b, subscription: byUser.get(id)?.status ?? "none",
+  });
+  // administradores sem negócio não são clientes; negócios sem perfil ainda aparecem
+  const members = profiles.filter((p) => !p.isAdmin || byOwner.has(p.id));
+  const rows = [
+    ...members.map((p) => row(p.id, p, byOwner.get(p.id) ?? null)),
+    ...all.filter((b) => !known.has(b.ownerId)).map((b) => row(b.ownerId, null, b)),
+  ].sort((a, b) => (b.joinedAt ?? "").localeCompare(a.joinedAt ?? ""));
   const active = subs.filter((s) => s.status === "active").length;
   return {
+    totalAccounts: rows.length,
     totalBusinesses: all.length,
+    partnershipsAccepted: counts.accepted,
+    partnershipsPending: counts.pending,
+    messages: counts.messages,
     activeSubscribers: active,
     earlyRegistrations: subs.filter((s) => s.status === "trialing").length,
     projectedMrr: (active + (isLaunched(ctx.now) ? 0 : subs.filter((s) => s.status === "trialing").length)) * PRICE_CENTS,
     config,
     mode,
-    rows: all.map((b) => ({ business: b, ownerEmail: emails[b.ownerId] ?? "—", subscription: byUser.get(b.ownerId)?.status ?? "none" })),
+    rows,
   };
 }
 

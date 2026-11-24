@@ -41,9 +41,22 @@ function ok(res: { data: any; error: any }): any {
 
 const db = () => adminClient() as any;
 
+/** O Supabase devolve no máximo 1000 linhas por consulta: lê página por página. */
+async function pages(q: (from: number, to: number) => any, limit = Infinity): Promise<any[]> {
+  const SIZE = 1000;
+  const out: any[] = [];
+  while (out.length < limit) {
+    const want = Math.min(SIZE, limit - out.length);
+    const part = ok(await q(out.length, out.length + want - 1));
+    out.push(...part);
+    if (part.length < want) break;
+  }
+  return out;
+}
+
 export const supabaseRepo: Repo = {
   async listBusinesses(limit) {
-    return ok(await db().from("businesses").select("*").order("created_at", { ascending: false }).limit(limit)).map(B);
+    return (await pages((a, z) => db().from("businesses").select("*").order("created_at", { ascending: false }).order("id").range(a, z), limit)).map(B);
   },
   async getBusiness(id) {
     const r = ok(await db().from("businesses").select("*").eq("id", id).maybeSingle());
@@ -119,12 +132,23 @@ export const supabaseRepo: Repo = {
     return r ? S(r) : null;
   },
   async listSubscriptions() {
-    return ok(await db().from("subscriptions").select("*")).map(S);
+    return (await pages((a, z) => db().from("subscriptions").select("*").order("user_id").range(a, z))).map(S);
   },
-  async ownerEmails(ids) {
-    const uniq = [...new Set(ids)];
-    if (!uniq.length) return {};
-    const rows = ok(await db().from("profiles").select("id,email").in("id", uniq)) as { id: string; email: string }[];
-    return Object.fromEntries(rows.map((r) => [r.id, r.email]));
+  async listProfiles() {
+    return (await pages((a, z) => db().from("profiles").select("*").order("created_at", { ascending: false }).order("id").range(a, z))).map((r) => ({
+      id: r.id, email: r.email, name: r.name ?? "", isAdmin: !!r.is_admin, createdAt: r.created_at,
+    }));
+  },
+  async activityCounts() {
+    const count = async (q: any) => {
+      const r = await q;
+      ok(r);
+      return (r.count ?? 0) as number;
+    };
+    const head = (t: string) => db().from(t).select("*", { count: "exact", head: true });
+    const [accepted, pending, messages] = await Promise.all([
+      count(head("partnerships").eq("status", "accepted")), count(head("partnerships").eq("status", "pending")), count(head("messages")),
+    ]);
+    return { accepted, pending, messages };
   },
 };
