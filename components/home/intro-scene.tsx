@@ -14,13 +14,18 @@ import { category } from "@/lib/categories";
 import { buildNetwork, type BayPin } from "@/lib/bay";
 import { coastPoints, logoPoints, pillarsFrom, type Pillar } from "@/lib/intro-targets";
 
-import type { IntroState } from "@/lib/intro-state";
+import type { IntroState, PointerState } from "@/lib/intro-state";
+import { Warp, Shatter } from "./intro/spectacle";
+import { City } from "./intro/city";
+import { PointerFX, pointerGLSL, pointerUniforms, updatePointerUniforms } from "./intro/pointer";
+import { Effects } from "./intro/effects";
 export type { IntroState };
 
 type Ref<T> = React.RefObject<T>;
 
 /* ------------------------------------------------------------------ partículas */
 const partVert = /* glsl */ `
+${pointerGLSL}
 uniform float uTime, uLogo, uBurst, uCoast, uFlash, uReveal, uLogoScale, uPR;
 attribute vec3 aCloud;
 attribute vec3 aLogo;
@@ -56,19 +61,23 @@ void main(){
     sin(aSeed * 17.0 + uTime * 0.9 + p.z * 2.0)
   ) * 0.32 * transit;
 
+  // o ponteiro empurra e gira as partículas
+  p += pointerDisplace(p, aSeed);
+
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
   float coastLine = step(0.9, aKind) * pc;
-  float size = (1.1 + aSeed * 1.7) * (1.0 + uFlash * 2.5) * (1.0 + coastLine * 0.6);
-  gl_PointSize = size * uPR * (7.0 / -mv.z);
+  float size = (1.1 + aSeed * 1.7) * (1.0 + uFlash * 0.4) * (1.0 + coastLine * 0.6);
+  float nearFade = smoothstep(0.5, 2.0, -mv.z); // partícula colada na câmera viraria um borrão gigante
+  gl_PointSize = min(size * uPR * (7.0 / max(-mv.z, 0.1)), 14.0 * uPR);
 
   float twinkle = 0.65 + 0.35 * sin(uTime * 2.0 + aSeed * 50.0);
-  vAlpha = uReveal * mix(0.28, 1.0, max(pl, pc)) * mix(1.0, twinkle, pc) * mix(1.0, 0.55 + aKind * 0.45, pc);
+  vAlpha = nearFade * uReveal * mix(0.28, 1.0, max(pl, pc)) * mix(1.0, twinkle, pc) * mix(1.0, 0.55 + aKind * 0.45, pc);
   vec3 white = vec3(0.92, 1.0, 0.98);
   vec3 aqua = vec3(0.35, 0.95, 0.88);
   vec3 sand = vec3(1.0, 0.86, 0.7);
   vColor = mix(mix(aqua, white, pl), mix(aqua * 0.8, sand, step(0.9, aKind) * 0.25), pc);
-  vColor += uFlash * 0.6;
+  vColor *= 1.0 - 0.65 * uBurst * (1.0 - pc); // deixa os cristais aparecerem na explosão
 }
 `;
 const partFrag = /* glsl */ `
@@ -82,9 +91,9 @@ void main(){
 }
 `;
 
-function Particles({ intro, count, logo, coast }: { intro: Ref<IntroState>; count: number; logo: Float32Array; coast: { pos: Float32Array; kind: Float32Array } }) {
+function Particles({ intro, pointer, count, logo, coast }: { intro: Ref<IntroState>; pointer: Ref<PointerState>; count: number; logo: Float32Array; coast: { pos: Float32Array; kind: Float32Array } }) {
   const mat = useRef<THREE.ShaderMaterial>(null);
-  const { size, viewport, gl } = useThree();
+  const { size, gl } = useThree();
   const geo = useMemo(() => {
     const g = new THREE.BufferGeometry();
     const cloud = new Float32Array(count * 3);
@@ -109,13 +118,14 @@ function Particles({ intro, count, logo, coast }: { intro: Ref<IntroState>; coun
     return g;
   }, [count, logo, coast]);
   const uniforms = useMemo(
-    () => ({ uTime: { value: 0 }, uLogo: { value: 0 }, uBurst: { value: 0 }, uCoast: { value: 0 }, uFlash: { value: 0 }, uReveal: { value: 0 }, uLogoScale: { value: 1 }, uPR: { value: 1 } }),
+    () => ({ uTime: { value: 0 }, uLogo: { value: 0 }, uBurst: { value: 0 }, uCoast: { value: 0 }, uFlash: { value: 0 }, uReveal: { value: 0 }, uLogoScale: { value: 1 }, uPR: { value: 1 }, ...pointerUniforms() }),
     [],
   );
-  useFrame((_, dt) => {
+  useFrame(({ camera }, dt) => {
     const u = mat.current?.uniforms;
     const s = intro.current;
     if (!u || !s) return;
+    updatePointerUniforms(u as unknown as ReturnType<typeof pointerUniforms>, camera, pointer, intro, Math.min(dt, 0.05));
     u.uTime.value += Math.min(dt, 0.05);
     u.uLogo.value = s.logo;
     u.uBurst.value = s.burst;
@@ -127,7 +137,6 @@ function Particles({ intro, count, logo, coast }: { intro: Ref<IntroState>; coun
     u.uLogoScale.value = Math.min(1, (visibleW * 0.82) / 5);
     u.uPR.value = gl.getPixelRatio() * (size.height / 900) * 1.6;
   });
-  void viewport;
   return (
     <points geometry={geo} frustumCulled={false}>
       <shaderMaterial ref={mat} vertexShader={partVert} fragmentShader={partFrag} uniforms={uniforms} transparent depthWrite={false} blending={THREE.AdditiveBlending} />
@@ -206,8 +215,8 @@ void main(){
   float dimmed = (uHot >= 0.0 && vHot < 0.5) ? 0.45 : 1.0;
   float grad = 0.35 + 0.65 * smoothstep(0.0, 1.0, vY) + 0.5 * smoothstep(0.08, 0.0, vY);
   float band = 0.15 * smoothstep(0.02, 0.0, abs(fract(vY * 6.0 - uTime * 0.6) - 0.5) - 0.45);
-  vec3 c = mix(vColor, vec3(1.0), 0.25 + vFres * 0.5 + vHot * 0.3);
-  float a = (0.55 + vFres * 0.45 + band) * grad * dimmed * step(0.001, vR);
+  vec3 c = mix(vColor, vec3(1.0), 0.08 + vFres * 0.25 + vHot * 0.4);
+  float a = (0.26 + vFres * 0.3 + band) * grad * dimmed * step(0.001, vR); // aditivo + bloom: contido para não estourar em branco
   gl_FragColor = vec4(c * (1.0 + vHot * 0.8), a);
 }
 `;
@@ -225,14 +234,14 @@ void main(){
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
   float pulse = 0.85 + 0.15 * sin(uTime * 3.0 + aDelay * 20.0);
-  gl_PointSize = (14.0 + hot * 14.0) * pulse * uPR * (6.0 / -mv.z);
+  gl_PointSize = (10.0 + hot * 14.0) * pulse * uPR * (6.0 / -mv.z);
   vColor = mix(aColor, vec3(1.0), 0.55);
   vA = step(0.02, r);
 }
 `;
 const capFrag = /* glsl */ `
 varying vec3 vColor; varying float vA;
-void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d); gl_FragColor = vec4(vColor, a * a * vA); }
+void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d); gl_FragColor = vec4(vColor, a * a * vA * 0.7); }
 `;
 
 const ringVert = /* glsl */ `
@@ -257,6 +266,7 @@ void main(){
 
 function Pillars({ intro, pillars, hot }: { intro: Ref<IntroState>; pillars: Pillar[]; hot: Ref<number> }) {
   const mats = useRef<(THREE.ShaderMaterial | null)[]>([]);
+  const group = useRef<THREE.Group>(null);
   const { gl, size } = useThree();
   const { body, caps, rings } = useMemo(() => {
     const n = pillars.length;
@@ -299,6 +309,7 @@ function Pillars({ intro, pillars, hot }: { intro: Ref<IntroState>; pillars: Pil
   useFrame((_, dt) => {
     const s = intro.current;
     if (!s) return;
+    if (group.current) group.current.visible = s.rise > 0; // senão as tampas flutuam sobre o logotipo
     for (const m of mats.current) {
       if (!m) continue;
       m.uniforms.uRise.value = s.rise;
@@ -310,7 +321,7 @@ function Pillars({ intro, pillars, hot }: { intro: Ref<IntroState>; pillars: Pil
   if (!pillars.length) return null;
   const common = { transparent: true, depthWrite: false, blending: THREE.AdditiveBlending } as const;
   return (
-    <group>
+    <group ref={group} visible={false}>
       <mesh geometry={rings} frustumCulled={false} position-y={0.004}>
         <shaderMaterial ref={(m) => { mats.current[0] = m; }} vertexShader={ringVert} fragmentShader={ringFrag} uniforms={uniforms[0]} {...common} />
       </mesh>
@@ -345,7 +356,7 @@ void main(){
   float vis = smoothstep(draw, draw - 0.05, vT) * step(0.001, draw);
   float ph = fract(vT - uTime * 0.32 + vD * 7.0) - 0.5;
   float pulse = exp(-ph * ph * 320.0) * step(0.999, draw);
-  float head = exp(-pow((vT - draw) * 30.0, 2.0)) * (1.0 - step(0.999, draw));
+  float head = exp(-pow((vT - draw) * 30.0, 2.0)) * step(0.001, draw) * (1.0 - step(0.999, draw));
   vec3 c = mix(vec3(0.25, 0.85, 0.8), vec3(1.0, 0.86, 0.72), vT);
   float a = vis * (0.28 + vHot * 0.6) * (1.0 - vDim * 0.75) + (pulse + head) * (1.0 - vDim * 0.7);
   gl_FragColor = vec4(c + (pulse + head) * 0.8, a);
@@ -402,9 +413,9 @@ const AERIAL_LOOK = new THREE.Vector3(0.15, 0.2, -0.35);
 const smooth = (t: number) => t * t * (3 - 2 * t);
 
 function Rig({
-  intro, mouse, pillars, hot, onHover, interactive,
+  intro, mouse, pointer, pillars, hot, onHover, interactive,
 }: {
-  intro: Ref<IntroState>; mouse: Ref<[number, number]>; pillars: Pillar[]; hot: Ref<number>; onHover: (p: Pillar | null) => void; interactive: boolean;
+  intro: Ref<IntroState>; mouse: Ref<[number, number]>; pointer: Ref<PointerState>; pillars: Pillar[]; hot: Ref<number>; onHover: (p: Pillar | null) => void; interactive: boolean;
 }) {
   const { camera, size } = useThree();
   const m = useRef(new THREE.Vector2(0.5, 0.5));
@@ -414,7 +425,7 @@ function Rig({
   const target2 = useMemo(() => new THREE.Vector2(), []);
   const last = useRef(-1);
   const moved = useRef<string | null>(null);
-  useFrame(() => {
+  useFrame((_, dt) => {
     const s = intro.current;
     if (!s) return;
     const [mx, my] = mouse.current ?? [0.5, 0.5];
@@ -423,12 +434,17 @@ function Rig({
     if (moved.current === null) moved.current = key;
     const pointerActive = moved.current !== key;
     if (pointerActive) moved.current = "moved";
-    m.current.lerp(target2.set(mx, my), 0.05);
+    m.current.lerp(target2.set(mx, my), 1 - Math.exp(-Math.min(dt, 0.05) * 5));
     const t = smooth(Math.min(1, Math.max(0, s.tilt)));
     pos.lerpVectors(FRONT, AERIAL, t);
     look.lerpVectors(FRONT_LOOK, AERIAL_LOOK, t);
+    // voo rasante: no meio da inclinação a câmera desce e contorna a cidade
+    const swoop = Math.sin(Math.PI * t);
+    pos.y -= swoop * 1.15;
+    // logotipo: entra girando, para revelar o volume das letras
+    const spin = (1 - smooth(Math.min(1, s.logo))) * 0.7 * (1 - t);
     // órbita suave com o mouse depois que a cena assenta
-    const yaw = (m.current.x - 0.5) * 0.42 * s.settle + (m.current.x - 0.5) * 0.12;
+    const yaw = (m.current.x - 0.5) * 0.42 * s.settle + (m.current.x - 0.5) * 0.45 * (1 - s.settle) - swoop * 1.05 + spin;
     const cos = Math.cos(yaw);
     const sin = Math.sin(yaw);
     const dx = pos.x - look.x;
@@ -440,6 +456,9 @@ function Rig({
     pos.y += s.scroll * 2.6;
     pos.z += s.scroll * 1.8;
     camera.position.copy(pos);
+    // campo de visão abre no túnel e "soca" na explosão
+    const cam = camera as THREE.PerspectiveCamera;
+    cam.fov = 45 + s.warp * 22 + s.flash * 5;
     camera.lookAt(look);
 
     // enquadramento: no desktop a baía vai para a direita; no celular, para baixo
@@ -452,13 +471,26 @@ function Rig({
 
     // hover: pilar mais próximo do cursor, em pixels
     let best = -1;
-    if (interactive && moved.current === "moved" && s.settle > 0.9 && s.scroll < 0.2) {
-      let bd = 30 * 30;
+    const ptr = pointer.current;
+    let hx = mx;
+    let hy = my;
+    let canHover = moved.current === "moved";
+    // no toque não existe hover: vale o último toque, por um instante
+    if (ptr?.touch) {
+      const tap = ptr.taps[ptr.taps.length - 1];
+      canHover = !!tap && performance.now() / 1000 - tap.t < 1.5;
+      if (tap) {
+        hx = tap.x;
+        hy = tap.y;
+      }
+    }
+    if (interactive && canHover && s.settle > 0.9 && s.scroll < 0.2) {
+      let bd = ptr?.touch ? 36 * 36 : 30 * 30;
       pillars.forEach((p, i) => {
         tmp.set(p.x, p.h * 0.7, p.z).project(camera);
         const sx = (tmp.x * 0.5 + 0.5) * w;
         const sy = (-tmp.y * 0.5 + 0.5) * h;
-        const d = (sx - mx * w) ** 2 + (sy - my * h) ** 2;
+        const d = (sx - hx * w) ** 2 + (sy - hy * h) ** 2;
         if (d < bd) {
           bd = d;
           best = i;
@@ -488,9 +520,9 @@ function Label({ pillar }: { pillar: Pillar | null }) {
 
 /* ------------------------------------------------------------------ cena */
 function Scene({
-  intro, mouse, pins, count, interactive, onReady, onHover,
+  intro, mouse, pointer, pins, count, mobile, interactive, onReady, onHover,
 }: {
-  intro: Ref<IntroState>; mouse: Ref<[number, number]>; pins: BayPin[]; count: number; interactive: boolean; onReady: () => void; onHover: (id: string | null) => void;
+  intro: Ref<IntroState>; mouse: Ref<[number, number]>; pointer: Ref<PointerState>; mobile: boolean; pins: BayPin[]; count: number; interactive: boolean; onReady: () => void; onHover: (id: string | null) => void;
 }) {
   const reveal = useRef(0);
   const hot = useRef(-1);
@@ -511,6 +543,12 @@ function Scene({
 
   useFrame(() => {
     reveal.current = intro.current?.reveal ?? 1;
+    const p = pointer.current;
+    const m = mouse.current;
+    if (p && m) {
+      m[0] = p.x;
+      m[1] = p.y;
+    }
     if (targets && !readySent.current) {
       readySent.current = true;
       requestAnimationFrame(onReady);
@@ -521,10 +559,14 @@ function Scene({
     <>
       <Water reveal={reveal} mouse={mouse} />
       <Grid intro={intro} />
-      {targets && <Particles intro={intro} count={count} logo={targets.logo} coast={targets.coast} />}
+      {targets && <Particles intro={intro} pointer={pointer} count={count} logo={targets.logo} coast={targets.coast} />}
+      <Warp intro={intro} mobile={mobile} />
+      <Shatter intro={intro} mobile={mobile} />
+      <City intro={intro} pillars={pillars} mobile={mobile} />
       <Pillars intro={intro} pillars={pillars} hot={hot} />
       <Arcs intro={intro} pillars={pillars} pins={pins} hot={hot} />
       <Rig
+        pointer={pointer}
         intro={intro}
         mouse={mouse}
         pillars={pillars}
@@ -535,7 +577,9 @@ function Scene({
           onHover(p?.id ?? null);
         }}
       />
+      <PointerFX intro={intro} pointer={pointer} mobile={mobile} />
       <Label pillar={label} />
+      <Effects intro={intro} mobile={mobile} />
     </>
   );
 }
@@ -543,6 +587,7 @@ function Scene({
 export default function IntroScene(props: {
   intro: Ref<IntroState>;
   mouse: Ref<[number, number]>;
+  pointer: Ref<PointerState>;
   pins: BayPin[];
   active: boolean;
   interactive: boolean;
@@ -552,18 +597,18 @@ export default function IntroScene(props: {
   const count = useMemo(() => {
     if (typeof window === "undefined") return 6000;
     const mem = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
-    return window.matchMedia("(max-width: 768px)").matches || (mem && mem < 4) ? 5000 : 12000;
+    return window.matchMedia("(max-width: 768px)").matches || (mem && mem < 4) ? 6000 : 18000;
   }, []);
   return (
     <Canvas
       dpr={[1, 1.5]}
       frameloop={props.active ? "always" : "never"}
-      gl={{ antialias: true, powerPreference: "high-performance", alpha: false }}
+      gl={{ antialias: false, powerPreference: "high-performance", alpha: false }}
       camera={{ position: [0, 0, 7], fov: 45, near: 0.1, far: 60 }}
       style={{ position: "absolute", inset: 0 }}
       aria-hidden
     >
-      <Scene intro={props.intro} mouse={props.mouse} pins={props.pins} count={count} interactive={props.interactive} onReady={props.onReady} onHover={props.onHover} />
+      <Scene intro={props.intro} mouse={props.mouse} pointer={props.pointer} mobile={count <= 6000} pins={props.pins} count={count} interactive={props.interactive} onReady={props.onReady} onHover={props.onHover} />
     </Canvas>
   );
 }

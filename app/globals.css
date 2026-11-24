@@ -382,7 +382,7 @@ body {
 .thin-scroll { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
 
 .intro-pending .hw { transform: translateY(115%); }
-.intro-pending .h-fade { opacity: 0; }
+.intro-pending .h-fade { opacity: 0; visibility: hidden; }
 .intro-pending .bm-pin, .intro-pending .bm-land, .intro-pending .bm-island, .intro-pending .bm-travelers { opacity: 0; }
 .intro-pending .bm-coast, .intro-pending .bm-coast-glow, .intro-pending .bm-arc { stroke-dashoffset: 1; }
 

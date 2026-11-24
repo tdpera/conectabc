@@ -54,7 +54,7 @@ export function Header() {
     setIntroDone(false);
     const on = () => setIntroDone(true);
     window.addEventListener(INTRO_DONE, on);
-    const t = setTimeout(on, 4200);
+    const t = setTimeout(on, 11000); // segurança: abertura (~5,4 s) + espera máxima da cena
     return () => {
       window.removeEventListener(INTRO_DONE, on);
       clearTimeout(t);

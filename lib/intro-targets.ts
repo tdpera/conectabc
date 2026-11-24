@@ -95,7 +95,7 @@ export async function logoPoints(n: number, width = 5): Promise<Float32Array> {
   order.forEach((k, i) => {
     out[i * 3] = (pts[k * 2] - cx) * scale;
     out[i * 3 + 1] = -(pts[k * 2 + 1] - cy) * scale;
-    out[i * 3 + 2] = (Math.random() - 0.5) * 0.12;
+    out[i * 3 + 2] = (Math.random() - 0.5) * 0.42; // letras com volume real
   });
   return fitPoints(out, n, 0.02);
 }

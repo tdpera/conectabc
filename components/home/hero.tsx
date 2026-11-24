@@ -12,14 +12,15 @@ import { decorativePins, type BayPin } from "@/lib/bay";
 import { LinkButton, Magnetic } from "@/components/ui/button";
 import { INTRO_DONE } from "@/components/app/header";
 import type { DirectoryEntry } from "@/lib/backend/types";
-import { initialIntro, type IntroState } from "@/lib/intro-state";
+import { initialIntro, initialPointer, type IntroState, type PointerState } from "@/lib/intro-state";
+import { usePointerField } from "./intro/pointer";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
 const OceanScene = dynamic(() => import("./ocean-scene"), { ssr: false });
 const IntroScene = dynamic(() => import("./intro-scene"), { ssr: false });
 /** Tempo máximo esperando a cena 3D antes de cair para a abertura em SVG. */
-const SCENE_TIMEOUT = 2600;
+const SCENE_TIMEOUT = 4500;
 
 const LINES = [["Seu", "próximo"], ["parceiro", "está"], ["aqui", "perto."]];
 const PLAYED = "conectabc:intro-played";
@@ -63,6 +64,8 @@ export function Hero({ businesses, ready, locked }: { businesses: DirectoryEntry
   const [mode, setMode] = useState<"pending" | "3d" | "svg">("pending");
   const [sceneReady, setSceneReady] = useState(false);
   const introState = useRef<IntroState>(initialIntro());
+  const pointer = useRef<PointerState>(initialPointer());
+  usePointerField(root, pointer);
   const hoverId = useRef<string | null>(null);
   const [hovering, setHovering] = useState(false);
 
@@ -138,35 +141,39 @@ export function Hero({ businesses, ready, locked }: { businesses: DirectoryEntry
       gsap.set(q(".bm-land, .bm-island, .bm-travelers"), { opacity: 0 });
       gsap.set(q(".bm-pin"), { opacity: 0, y: -26, scale: 0.2, transformOrigin: "50% 100%" });
       gsap.set(q(".hw"), { y: 0, yPercent: 115, rotate: 5, fontWeight: 300 });
-      gsap.set(q(".h-fade"), { opacity: 0, y: 26, filter: "blur(8px)" });
+      gsap.set(q(".h-fade"), { autoAlpha: 0, y: 26, filter: "blur(8px)" });
       setPending(false);
 
       if (mode === "3d") {
         const s = introState.current;
         Object.assign(s, initialIntro());
-        // 1. Preto → água; partículas acordam
-        t.to(s, { reveal: 1, duration: 2.2, ease: "power2.inOut" }, 0);
-        // 2. Partículas formam o logotipo
-        t.to(s, { logo: 1, duration: 1.35, ease: "none" }, 0.45);
-        // 3. Explosão + clarão
-        t.to(s, { burst: 1, duration: 0.7, ease: "power3.out" }, 1.8);
-        t.to(s, { flash: 1, duration: 0.1, ease: "power2.out" }, 1.8);
-        t.to(s, { flash: 0, duration: 0.7, ease: "power2.in" }, 1.9);
-        t.fromTo(q(".hero-flash"), { opacity: 0, scale: 0.6 }, { opacity: 0.55, scale: 1, duration: 0.12, ease: "power2.out" }, 1.8);
-        t.to(q(".hero-flash"), { opacity: 0, scale: 1.6, duration: 0.9, ease: "power2.out" }, 1.92);
-        // 4. Pousam na baía enquanto a câmera inclina
-        t.to(s, { coast: 1, duration: 1.5, ease: "none" }, 2.05);
-        t.to(s, { tilt: 1, duration: 1.9, ease: "power3.inOut" }, 2.15);
-        t.to(s, { grid: 1, duration: 1.2, ease: "power2.out" }, 2.4);
-        t.to(s, { settle: 1, duration: 1.7, ease: "power2.inOut" }, 2.6);
+        // 1. Preto → viagem pelo túnel de luz
+        t.to(s, { reveal: 1, duration: 1.3, ease: "power2.out" }, 0);
+        t.to(s, { warp: 1, duration: 0.9, ease: "power2.in" }, 0.05);
+        t.to(s, { warp: 0, duration: 0.95, ease: "power3.out" }, 1.15);
+        // 2. Saindo do túnel, as partículas esculpem o logotipo em 3D
+        t.to(s, { logo: 1, duration: 1.5, ease: "none" }, 0.95);
+        // 3. O logotipo estilhaça: cristais, onda de choque e clarão
+        t.to(s, { burst: 1, duration: 0.8, ease: "power3.out" }, 2.85);
+        t.to(s, { shatter: 1, duration: 2.1, ease: "power2.out" }, 2.85);
+        t.to(s, { flash: 1, duration: 0.1, ease: "power2.out" }, 2.85);
+        t.to(s, { flash: 0, duration: 0.8, ease: "power2.in" }, 2.95);
+        t.fromTo(q(".hero-flash"), { opacity: 0, scale: 0.6 }, { opacity: 0.4, scale: 1, duration: 0.12, ease: "power2.out" }, 2.85);
+        t.to(q(".hero-flash"), { opacity: 0, scale: 1.6, duration: 0.9, ease: "power2.out" }, 2.97);
+        // 4. Voo rasante: as partículas pousam na baía e a cidade sobe do chão
+        t.to(s, { coast: 1, duration: 1.6, ease: "none" }, 3.15);
+        t.to(s, { tilt: 1, duration: 2.6, ease: "power2.inOut" }, 3.2);
+        t.to(s, { grid: 1, duration: 1.2, ease: "power2.out" }, 3.5);
+        t.to(s, { city: 1, duration: 2.2, ease: "none" }, 3.75);
+        t.to(s, { settle: 1, duration: 1.9, ease: "power2.inOut" }, 4.0);
         // 5. Skyline de luz e a rede
-        t.to(s, { rise: 1, duration: 1.3, ease: "none" }, 3.0);
-        t.to(s, { draw: 1, duration: 1.3, ease: "none" }, 3.45);
+        t.to(s, { rise: 1, duration: 1.4, ease: "none" }, 4.4);
+        t.to(s, { draw: 1, duration: 1.4, ease: "none" }, 4.9);
         // 6. Manchete
-        t.to(q(".hw"), { yPercent: 0, rotate: 0, duration: 1.3, stagger: 0.075 }, 3.55);
-        t.to(q(".hw"), { fontWeight: 760, duration: 1.6, ease: "power2.out", stagger: 0.075 }, 3.75);
-        t.to(q(".h-fade"), { opacity: 1, y: 0, filter: "blur(0px)", duration: 1.0, stagger: 0.1 }, 4.05);
-        t.add(() => window.dispatchEvent(new Event(INTRO_DONE)), 4.3);
+        t.to(q(".hw"), { yPercent: 0, rotate: 0, duration: 1.3, stagger: 0.075 }, 4.75);
+        t.to(q(".hw"), { fontWeight: 760, duration: 1.6, ease: "power2.out", stagger: 0.075 }, 4.95);
+        t.to(q(".h-fade"), { autoAlpha: 1, y: 0, filter: "blur(0px)", duration: 1.0, stagger: 0.1 }, 5.2);
+        t.add(() => window.dispatchEvent(new Event(INTRO_DONE)), 5.4);
 
         if (played) t.timeScale(3.2);
 
@@ -199,7 +206,7 @@ export function Hero({ businesses, ready, locked }: { businesses: DirectoryEntry
       // 5. Manchete
       t.to(q(".hw"), { yPercent: 0, rotate: 0, duration: 1.3, stagger: 0.075 }, 0.9);
       t.to(q(".hw"), { fontWeight: 760, duration: 1.6, ease: "power2.out", stagger: 0.075 }, 1.1);
-      t.to(q(".h-fade"), { opacity: 1, y: 0, filter: "blur(0px)", duration: 1.0, stagger: 0.1 }, 1.5);
+      t.to(q(".h-fade"), { autoAlpha: 1, y: 0, filter: "blur(0px)", duration: 1.0, stagger: 0.1 }, 1.5);
       t.add(() => window.dispatchEvent(new Event(INTRO_DONE)), 2.0);
 
       if (reduce) t.progress(1);
@@ -227,15 +234,23 @@ export function Hero({ businesses, ready, locked }: { businesses: DirectoryEntry
       ref={root}
       className={`${pending ? "intro-pending " : ""}relative isolate h-[100svh] min-h-[680px] overflow-hidden bg-[#01141a] text-white`}
       onClick={(e) => {
-        if (!hoverId.current || (e.target as HTMLElement).closest("a,button")) return;
-        router.push(`/negocio/${hoverId.current}`);
+        if ((e.target as HTMLElement).closest("a,button")) return;
+        const go = () => {
+          if (hoverId.current) router.push(`/negocio/${hoverId.current}`);
+        };
+        // no toque, espera a cena descobrir qual pilar foi tocado
+        if (pointer.current.touch) {
+          const tap = pointer.current.taps[pointer.current.taps.length - 1];
+          if (!tap || performance.now() / 1000 - tap.t > 0.25) return; // clique sem toque novo: ignora
+          requestAnimationFrame(() => requestAnimationFrame(go));
+        } else go();
       }}
       style={{ cursor: hovering ? "pointer" : undefined }}
       onPointerMove={(e) => {
         const r = e.currentTarget.getBoundingClientRect();
         const x = (e.clientX - r.left) / r.width;
         const y = (e.clientY - r.top) / r.height;
-        mouse.current = [x, y];
+        if (mode !== "3d") mouse.current = [x, y]; // na cena 3D quem manda é o PointerState
         mx.set(x - 0.5);
         my.set(y - 0.5);
       }}
@@ -254,6 +269,7 @@ export function Hero({ businesses, ready, locked }: { businesses: DirectoryEntry
           <IntroScene
             intro={introState}
             mouse={mouse}
+            pointer={pointer}
             pins={pins}
             active={active}
             interactive={!locked}
