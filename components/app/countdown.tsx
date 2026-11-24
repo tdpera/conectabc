@@ -36,7 +36,7 @@ export function CountdownBar({ dark }: { dark?: boolean }) {
         <span className="hidden sm:inline"> Depois, {PRICE_LABEL}/mês.</span>
       </span>
       {t && (
-        <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 font-mono tabular-nums tracking-tight">
+        <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 tabular-nums tracking-tight">
           {t.days}d {pad(t.hours)}h {pad(t.minutes)}m <span className="hidden sm:inline">{pad(t.seconds)}s</span>
         </span>
       )}

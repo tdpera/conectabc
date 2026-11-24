@@ -22,8 +22,8 @@
   --color-brand: var(--brand);
   --color-brand-ink: var(--brand-ink);
 
-  --font-display: var(--font-bricolage), ui-sans-serif, system-ui;
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui;
+  --font-display: var(--font-onest), ui-sans-serif, system-ui;
+  --font-sans: var(--font-onest), ui-sans-serif, system-ui;
 
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -111,7 +111,6 @@ body {
 
 .font-display {
   font-family: var(--font-display);
-  font-optical-sizing: auto;
   letter-spacing: -0.03em;
 }
 
@@ -443,3 +442,11 @@ body {
   pointer-events: none;
 }
 .spotlight:hover .spot-card::after { opacity: 1; }
+
+.leaflet-container,
+.leaflet-container .leaflet-control,
+.leaflet-container .leaflet-control a,
+.leaflet-container .leaflet-tooltip,
+.leaflet-container .leaflet-popup {
+  font-family: var(--font-sans);
+}

@@ -60,7 +60,7 @@ export function fitPoints(samples: Float32Array, n: number, jitter = 0.01, seed 
 /** Amostra pixels de "ConectaBC" escrito com a fonte de display. Precisa do DOM. */
 export async function logoPoints(n: number, width = 5): Promise<Float32Array> {
   await document.fonts?.ready;
-  const family = getComputedStyle(document.documentElement).getPropertyValue("--font-bricolage").trim() || "sans-serif";
+  const family = getComputedStyle(document.documentElement).getPropertyValue("--font-onest").trim() || "sans-serif";
   const W = 1400;
   const H = 360;
   const c = document.createElement("canvas");

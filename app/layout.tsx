@@ -1,12 +1,11 @@
 import type { Metadata, Viewport } from "next";
-import { Bricolage_Grotesque, Inter } from "next/font/google";
+import { Onest } from "next/font/google";
 import "./globals.css";
 import { AppProvider } from "@/components/app/providers";
 import { Header } from "@/components/app/header";
 import { DemoDock } from "@/components/app/demo-dock";
 
-const bricolage = Bricolage_Grotesque({ subsets: ["latin"], variable: "--font-bricolage", display: "swap", axes: ["wdth", "opsz"] });
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
+const onest = Onest({ subsets: ["latin", "latin-ext"], variable: "--font-onest", display: "swap" });
 
 export const metadata: Metadata = {
   title: { default: "ConectaBC · Rede de negócios de Balneário Camboriú", template: "%s · ConectaBC" },
@@ -27,7 +26,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR" className={`${bricolage.variable} ${inter.variable}`} suppressHydrationWarning>
+    <html lang="pt-BR" className={onest.variable} suppressHydrationWarning>
       <body className="min-h-dvh">
         <AppProvider>
           <Header />
