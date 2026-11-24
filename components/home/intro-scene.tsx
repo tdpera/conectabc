@@ -67,12 +67,12 @@ void main(){
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
   float coastLine = step(0.9, aKind) * pc;
-  float size = (1.1 + aSeed * 1.7) * (1.0 + uFlash * 0.4) * (1.0 + coastLine * 0.6);
+  float size = (1.1 + aSeed * 1.7) * (1.0 + uFlash * 0.4) * (1.0 + coastLine * 0.15);
   float nearFade = smoothstep(0.5, 2.0, -mv.z); // partícula colada na câmera viraria um borrão gigante
   gl_PointSize = min(size * uPR * (7.0 / max(-mv.z, 0.1)), 14.0 * uPR);
 
   float twinkle = 0.65 + 0.35 * sin(uTime * 2.0 + aSeed * 50.0);
-  vAlpha = nearFade * uReveal * mix(0.28, 1.0, max(pl, pc)) * mix(1.0, twinkle, pc) * mix(1.0, 0.55 + aKind * 0.45, pc);
+  vAlpha = nearFade * uReveal * mix(0.28, 1.0, max(pl, pc)) * mix(1.0, twinkle, pc) * mix(1.0, 0.45 + aKind * 0.25, pc);
   vec3 white = vec3(0.92, 1.0, 0.98);
   vec3 aqua = vec3(0.35, 0.95, 0.88);
   vec3 sand = vec3(1.0, 0.86, 0.7);
@@ -438,6 +438,14 @@ function Rig({
     const t = smooth(Math.min(1, Math.max(0, s.tilt)));
     pos.lerpVectors(FRONT, AERIAL, t);
     look.lerpVectors(FRONT_LOOK, AERIAL_LOOK, t);
+    // celular em pé: recua e centraliza a cidade, que fica a oeste da praia
+    if (size.width < 1024) {
+      const back = 1 + t * Math.min(0.6, Math.max(0, 1.1 - size.width / size.height));
+      const shift = -1.15 * t;
+      pos.sub(look).multiplyScalar(back).add(look);
+      pos.x += shift;
+      look.x += shift;
+    }
     // voo rasante: no meio da inclinação a câmera desce e contorna a cidade
     const swoop = Math.sin(Math.PI * t);
     pos.y -= swoop * 1.15;

@@ -242,7 +242,7 @@ function placeBuildings(pillars: Pillar[], target: number): Building[] {
         // a costa vai de norte a sul, então a terra fica em (-tz, tx)
         const x = ax + (bx - ax) * t - tz * inland;
         const z = az + (bz - az) * t + tx * inland;
-        if (x < -3 || z < -2.5 || z > 2.35 || !inside(LAND, x, z)) continue;
+        if (x < -3 || z < -2.5 || z > 1.8 || !inside(LAND, x, z)) continue;
         const coast = distTo(COAST, x, z);
         if (coast < inland * 0.85 || distTo(RIVER, x, z) < 0.09) continue;
         if (Math.hypot(x - WHEEL.x, z - WHEEL.z) < 0.26 || Math.hypot(x - CABLE.a.x, z - CABLE.a.z) < 0.12) continue;
@@ -504,6 +504,8 @@ varying float vRise, vLit;
 float hash(vec2 p){ p = fract(p * vec2(123.34, 345.45)); p += dot(p, p + 34.345); return fract(p.x * p.y); }
 void main(){
   bool roof = abs(vN.y) > 0.5;
+  // MSAA extrapola varyings em triângulos menores que um pixel: limita antes de exp()
+  float y = clamp(vP.y, 0.0, vDim.y), below = vDim.y - y;
   float seed = vRand.y, tint = vRand.z;
   vec3 aqua = vec3(0.28, 0.9, 0.84), sand = vec3(1.0, 0.8, 0.56);
   vec3 accent = mix(aqua, sand, step(0.68, tint));
@@ -518,11 +520,11 @@ void main(){
   float edgeSide = 1.0 - smoothstep(px * 0.4, px * 1.3, e.x);
 
   // vidro escuro: a face leste (mar) é um pouco mais clara
-  float face = roof ? 0.9 : mix(0.55, 1.0, clamp(dot(vWN, normalize(vec3(0.85, 0.0, 0.5))) * 0.5 + 0.5, 0.0, 1.0));
+  float face = roof ? 0.5 : mix(0.55, 1.0, clamp(dot(vWN, normalize(vec3(0.85, 0.0, 0.5))) * 0.5 + 0.5, 0.0, 1.0));
   vec3 col = mix(vec3(0.012, 0.055, 0.075), vec3(0.05, 0.2, 0.24), k * 0.8 + 0.1) * face;
 
   if (roof) {
-    col += accent * max(edgeTop, edgeSide) * 0.2;
+    col += accent * max(edgeTop, edgeSide) * 0.2 * (1.0 - smoothstep(0.004, 0.012, px));
   } else {
     float u = (abs(vN.x) > 0.5 ? vP.z : vP.x) + 0.5;
     vec2 g = vec2(u / 0.018, vP.y / 0.027);
@@ -540,12 +542,12 @@ void main(){
     col += wc * shape * on * 1.05;
     col += aqua * shape * 0.03;
     // topo iluminado dos prédios altos, como as coroas da orla
-    col += accent * smoothstep(0.45, 0.8, vDim.y) * exp(-(vDim.y - vP.y) * 16.0) * 0.5 * vLit;
+    col += accent * smoothstep(0.45, 0.8, vDim.y) * exp(-below * 16.0) * 0.5 * vLit;
     col += accent * (edgeTop * 0.34 + edgeSide * (0.03 + 0.1 * k)) * (0.3 + 0.7 * vLit);
     // brilho da rua na base e frente luminosa enquanto sobe
-    col += sand * exp(-vP.y * 20.0) * 0.3 * vLit;
+    col += sand * exp(-y * 20.0) * 0.3 * vLit;
     float rising = sin(clamp(vRise, 0.0, 1.0) * 3.14159);
-    col += aqua * exp(-(vDim.y - vP.y) * 30.0) * rising * 0.8;
+    col += aqua * exp(-below * 30.0) * rising * 0.8;
   }
   gl_FragColor = vec4(min(applyFog(col, vW), vec3(0.95)), 1.0);
 }
@@ -574,7 +576,7 @@ varying float vLit, vTint;
 void main(){
   float d = max(0.0, 1.0 - dot(vQ, vQ));
   vec3 c = mix(vec3(1.0, 0.62, 0.34), vec3(0.25, 0.8, 0.75), step(0.82, vTint));
-  gl_FragColor = vec4(c, d * d * 0.17 * vLit * (1.0 - edgeFog(vW)));
+  gl_FragColor = vec4(c, d * d * 0.26 * vLit * (1.0 - edgeFog(vW)));
 }
 `;
 
@@ -610,9 +612,9 @@ void main(){
   col += vec3(0.16, 0.74, 0.62) * wire * (0.025 + 0.17 * high);
   // contorno de luz que sobe o morro uma vez, junto com a montagem
   float scan = (vW.y - vR * 0.75) * 12.0;
-  col += vec3(0.3, 0.95, 0.65) * exp(-scan * scan) * (1.0 - vR) * 0.7;
+  col += vec3(0.3, 0.95, 0.65) * exp(-scan * scan) * clamp(1.0 - vR, 0.0, 1.0) * 0.7;
   // a cidade ilumina o pé dos morros
-  col += vec3(1.0, 0.66, 0.4) * exp(-length(vW.xz - vec2(-1.1, 0.1)) * 1.3) * exp(-vW.y * 9.0) * vR * 0.4;
+  col += vec3(1.0, 0.66, 0.4) * exp(-length(vW.xz - vec2(-1.1, 0.1)) * 1.6) * step(vW.x, -0.5) * exp(-max(vW.y, 0.0) * 9.0) * vR * 0.4;
   vec3 v = normalize(cameraPosition - vW);
   col += vec3(0.1, 0.6, 0.42) * pow(1.0 - clamp(dot(n, v), 0.0, 1.0), 3.0) * 0.3;
   gl_FragColor = vec4(min(applyFog(col, vW), vec3(0.9)), 1.0);
@@ -727,7 +729,7 @@ void main(){
   if (aLight.x < 0.5) {
     float t = staged(aLight.z);
     p.y = p.y * max(0.0, easeBack(t)) + 0.012;
-    pulse = 0.35 + 0.65 * pow(0.5 + 0.5 * sin(uTime * 2.0 + aLight.y * 40.0), 4.0);
+    pulse = 0.35 + 0.65 * pow(max(0.0, 0.5 + 0.5 * sin(uTime * 2.0 + aLight.y * 40.0)), 4.0);
     vA = smoothstep(0.75, 1.0, t) * pulse * 0.7;
     vC = mix(vec3(1.0, 0.42, 0.34), vec3(0.4, 0.95, 0.9), step(0.6, fract(aLight.y * 7.0)));
   } else {
@@ -772,9 +774,9 @@ void main(){
   float q = fract(x);
   float has = step(hash1(id + lane * 31.0), 0.72);
   // cabeça brilhante com rastro atrás
-  float tail = dir > 0.0 ? q : 1.0 - q;
+  float tail = clamp(dir > 0.0 ? q : 1.0 - q, 0.0, 1.0);
   float streak = pow(tail, 5.0) * smoothstep(1.0, 0.94, tail) * has;
-  float across = 1.0 - vRoad.y * vRoad.y;
+  float across = max(0.0, 1.0 - vRoad.y * vRoad.y);
   vec3 c = lane < 0.5 ? vec3(1.0, 0.82, 0.58) : mix(vec3(1.0, 0.4, 0.32), vec3(0.35, 0.92, 0.86), step(1.5, lane));
   float ends = smoothstep(0.0, 0.04, vRoad.x) * smoothstep(1.0, 0.96, vRoad.x);
   gl_FragColor = vec4(c, (streak * 1.25 + 0.14) * across * shown * ends);
