@@ -10,7 +10,7 @@ const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } })
 const page = await ctx.newPage();
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
-await page.route(/basemaps\.cartocdn/, (r) => r.abort());
+await page.route(/tiles\.openfreemap/, (r) => r.abort());
 
 // Visitante: payload público sem contatos
 await page.goto(base + "/negocio/b-03");

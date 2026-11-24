@@ -20,7 +20,7 @@ import { Button, LinkButton } from "@/components/ui/button";
 import { ProposeModal } from "@/components/partner/propose-modal";
 import { Footer } from "@/components/app/footer";
 
-const LeafletMap = dynamic(() => import("@/components/map/leaflet-map"), { ssr: false, loading: () => <div className="skeleton size-full" /> });
+const BusinessMap = dynamic(() => import("@/components/map/business-map"), { ssr: false, loading: () => <div className="skeleton size-full" /> });
 
 const ease = [0.16, 1, 0.3, 1] as const;
 
@@ -145,7 +145,7 @@ export default function ProfilePage() {
           {b && b.lat !== null && b.lng !== null && (
             <Section title="Localização" delay={0.35}>
               <div className="card h-72 overflow-hidden rounded-3xl">
-                <LeafletMap businesses={[b]} activeId={b.id} zoom={16} center={{ lat: b.lat, lng: b.lng }} interactive />
+                <BusinessMap businesses={[b]} activeId={b.id} zoom={16} center={{ lat: b.lat, lng: b.lng }} embedded />
               </div>
               <p className="mt-2 text-sm text-ink-faint">{b.address}</p>
             </Section>

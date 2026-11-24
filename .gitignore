@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# copiado do maplibre-gl no build
+/public/maplibre-gl-worker.mjs

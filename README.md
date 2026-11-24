@@ -32,7 +32,7 @@ Sem chaves configuradas, o app sobe em **modo demonstração**: 40 negócios fic
 - `lib/core.ts`: todas as regras (diretório, mensagens, parcerias, admin), escritas uma vez e executadas no servidor (`app/api/rpc/[op]`, com service role) e na demo (`lib/backend/demo.ts`).
 - `lib/server/entitlement.ts`: acesso após o lançamento verificado **ao vivo no Stripe**, com cache de 2 minutos; o webhook mantém `subscriptions` em dia e usa `billing_events` para idempotência.
 - `supabase/migrations`: esquema, RLS (cada usuário lê só o que é seu; sem escrita direta em mensagens/parcerias/assinaturas), índice único de parceria viva por par.
-- Visual: Next.js 15, Tailwind 4, Motion, GSAP + ScrollTrigger, Lenis, react-three-fiber (shader de água), Leaflet + OpenStreetMap/CARTO.
+- Visual: Next.js 15, Tailwind 4, Motion, GSAP + ScrollTrigger, Lenis, react-three-fiber (shader de água), MapLibre + OpenFreeMap (sem chave). Endereços: CNEFE/IBGE em `lib/data/enderecos-bc.json` (gerado por `scripts/build-enderecos.py`), com Photon/OpenStreetMap fora da cidade.
 
 ## Testes
 

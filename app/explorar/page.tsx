@@ -18,7 +18,7 @@ import { Empty, Skeleton } from "@/components/ui/misc";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 
-const LeafletMap = dynamic(() => import("@/components/map/leaflet-map"), {
+const BusinessMap = dynamic(() => import("@/components/map/business-map"), {
   ssr: false,
   loading: () => <div className="skeleton size-full !rounded-none" />,
 });
@@ -59,12 +59,31 @@ function Explore() {
     backend.listDirectory().then(setData).catch((e) => toast.error("Não foi possível carregar o mapa", e.message));
   }, [loading, session?.user?.id, launched, session?.entitled]);
 
+  // Negócios novos aparecem sozinhos: atualiza ao voltar para a aba e a cada 20 s.
+  useEffect(() => {
+    if (loading) return;
+    const pull = () => {
+      if (document.visibilityState !== "visible") return;
+      backend
+        .listDirectory()
+        .then((d) => setData((old) => (JSON.stringify(old) === JSON.stringify(d) ? old : d)))
+        .catch(() => {}); // a próxima tentativa resolve
+    };
+    const t = setInterval(pull, 20_000);
+    document.addEventListener("visibilitychange", pull);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", pull);
+    };
+  }, [loading, session?.user?.id, launched, session?.entitled]);
+
   // Volta de "Meu negócio" com ?salvo=1
   useEffect(() => {
     if (params.get("salvo") && data && session?.business) {
       toast.success("Negócio salvo!", session.business.lat ? "Seu pin já está no mapa." : "Marque seu ponto no mapa para aparecer aqui.");
       const b = session.business;
       if (b.lat && b.lng) {
+        setView("map");
         setActive(b.id);
         setFocus({ lat: b.lat, lng: b.lng, key: Date.now() });
       }
@@ -230,12 +249,13 @@ function Explore() {
       {/* Mapa */}
       <section className={clsx("relative flex-1", view === "list" && "max-lg:hidden")}>
         {ready && (desktop || view === "map") && (
-          <LeafletMap
+          <BusinessMap
             businesses={list}
             hoverId={hover}
             activeId={active}
             me={me}
             focus={focus}
+            fitKey={`${cat ?? ""}|${normalize(q.trim())}`}
             mineId={session?.business?.id}
             onSelect={(id) => setActive(id)}
             renderPopup={(b) => <PopupCard b={b} me={me} />}

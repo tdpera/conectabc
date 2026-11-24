@@ -12,11 +12,13 @@ import { Button } from "@/components/ui/button";
 import { Cover } from "@/components/ui/cover";
 import { toast } from "@/components/ui/toast";
 import { CATEGORIES } from "@/lib/categories";
+import { AddressSearch } from "@/components/map/address-search";
+import { reversePlace, searchPlaces, type Place } from "@/lib/places";
 import { backend } from "@/lib/backend";
 import { businessSchema } from "@/lib/rules";
 import type { BusinessInput } from "@/lib/types";
 
-const PickerMap = dynamic(() => import("@/components/map/leaflet-map").then((m) => m.PickerMap), { ssr: false, loading: () => <div className="skeleton size-full" /> });
+const PickerMap = dynamic(() => import("@/components/map/business-map").then((m) => m.PickerMap), { ssr: false, loading: () => <div className="skeleton size-full" /> });
 
 const ease = [0.16, 1, 0.3, 1] as const;
 
@@ -51,12 +53,20 @@ function BusinessForm() {
   const [locating, setLocating] = useState(false);
   const [section, setSection] = useState("info");
   const refs = useRef<Record<string, HTMLElement | null>>({});
+  /** Endereço a que o pin corresponde; null = marcado à mão, não mexer sozinho. */
+  const pinFor = useRef<string | null>(null);
+  /** Endereço preenchido por nós (pode ser trocado quando o pin muda). */
+  const autoAddress = useRef<string | null>(null);
+  const confirmedNoPin = useRef(false);
+  const lookup = useRef<AbortController | null>(null);
+  const [suggest, setSuggest] = useState<Place | null>(null);
 
   useEffect(() => {
     if (existing) {
       const { id: _i, ownerId: _o, createdAt: _c, isVisible: _v, ...rest } = existing;
       void _i; void _o; void _c; void _v;
       setF(rest);
+      pinFor.current = existing.lat !== null && existing.address ? existing.address : null;
       setCategory(existing.category);
     }
   }, [existing]);
@@ -77,13 +87,58 @@ function BusinessForm() {
     "aria-invalid": !!errors[k],
   });
 
+  const pickPlace = (p: Place) => {
+    lookup.current?.abort();
+    setSuggest(null);
+    pinFor.current = p.address;
+    autoAddress.current = null; // escolhido pela pessoa: arrastar o pin não troca
+    setErrors((e) => ({ ...e, lat: "", city: "" }));
+    setF((s) => ({
+      ...s,
+      address: p.address,
+      neighborhood: p.neighborhood || s.neighborhood,
+      city: p.city || s.city,
+      state: p.state || s.state,
+      lat: +p.lat.toFixed(6),
+      lng: +p.lng.toFixed(6),
+    }));
+    if (p.precision !== "exact") toast.info("Confira o ponto no mapa", "A posição é aproximada. Arraste o pin até a sua porta.");
+  };
+
+  const typeAddress = (v: string) => {
+    confirmedNoPin.current = false;
+    setSuggest(null);
+    set("address", v);
+  };
+
+  /** Pin marcado no mapa: guarda o ponto e descobre o endereço. */
+  const placePin = async (lat: number, lng: number) => {
+    pinFor.current = null;
+    setErrors((e) => ({ ...e, lat: "" }));
+    setSuggest(null);
+    setF((s) => ({ ...s, lat: +lat.toFixed(6), lng: +lng.toFixed(6) }));
+    lookup.current?.abort();
+    const ctl = (lookup.current = new AbortController());
+    try {
+      const p = await reversePlace(lat, lng, ctl.signal);
+      if (!p || ctl.signal.aborted) return;
+      setF((s) => {
+        if (s.address && s.address !== autoAddress.current) {
+          if (s.address !== p.address) setSuggest(p); // a pessoa escreveu: só sugere
+          return s;
+        }
+        autoAddress.current = p.address;
+        return { ...s, address: p.address, neighborhood: p.neighborhood || s.neighborhood, city: p.city || s.city, state: p.state || s.state };
+      });
+    } catch {} // sem endereço, o pin continua valendo
+  };
+
   const locate = () => {
     if (!("geolocation" in navigator)) return toast.error("Seu navegador não permite localização.");
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
       (p) => {
-        set("lat", +p.coords.latitude.toFixed(6));
-        set("lng", +p.coords.longitude.toFixed(6));
+        placePin(p.coords.latitude, p.coords.longitude);
         setLocating(false);
         toast.info("Localização aplicada", "Confira se o pin está na porta do seu negócio e ajuste se precisar.");
       },
@@ -96,7 +151,32 @@ function BusinessForm() {
   };
 
   const save = async () => {
-    const r = businessSchema.safeParse({ ...f, category });
+    let form = f;
+    // Digitou um endereço sem escolher a sugestão: procura o ponto antes de salvar.
+    const stale = f.lat !== null && pinFor.current !== null && pinFor.current !== f.address;
+    if (f.address.trim() && (f.lat === null || stale) && !confirmedNoPin.current) {
+      setBusy(true);
+      const [p] = await searchPlaces(f.address, f.city).catch(() => [] as Place[]);
+      setBusy(false);
+      if (p?.precision === "exact") {
+        form = { ...f, lat: +p.lat.toFixed(6), lng: +p.lng.toFixed(6), neighborhood: f.neighborhood || p.neighborhood };
+        pinFor.current = f.address;
+        setF(form);
+      } else {
+        confirmedNoPin.current = true;
+        if (p) {
+          pinFor.current = f.address;
+          set("lat", +p.lat.toFixed(6));
+          set("lng", +p.lng.toFixed(6));
+        } else if (stale) {
+          set("lat", null);
+          set("lng", null);
+        }
+        refs.current.pin?.scrollIntoView({ behavior: "smooth", block: "start" });
+        return toast.info(p ? "Confira o ponto no mapa" : "Não achamos esse endereço", p ? "A posição é aproximada. Arraste o pin e salve de novo." : "Toque no mapa para marcar, ou salve de novo para ficar só na lista.");
+      }
+    }
+    const r = businessSchema.safeParse({ ...form, category });
     if (!r.success) {
       const e: Record<string, string> = {};
       r.error.issues.forEach((i) => (e[String(i.path[0])] ||= i.message));
@@ -174,7 +254,7 @@ function BusinessForm() {
               <TextArea label="Descrição" {...bind("description")} maxLength={1500} counter={f.description.length} rows={4} className="sm:col-span-2" />
               <Field label="Bairro" {...bind("neighborhood")} maxLength={80} />
               <Field label="Cidade *" {...bind("city")} maxLength={80} className={clsx(errors.city && "animate-shake")} hint={errors.city} />
-              <Field label="Endereço" {...bind("address")} maxLength={200} />
+              <AddressSearch value={f.address} city={f.city} onText={typeAddress} onPick={pickPlace} />
               <Select label="Estado" value={f.state} onChange={(e) => set("state", e.target.value)}>
                 {["SC", "PR", "RS", "SP", "RJ", "MG", "Outro"].map((s) => <option key={s} value={s === "Outro" ? "" : s}>{s}</option>)}
               </Select>
@@ -207,21 +287,33 @@ function BusinessForm() {
               <AlertTriangle className="mt-0.5 size-4 shrink-0" />
               <p>Marque o endereço do <strong>estabelecimento</strong>. Nunca use o endereço da sua casa: o ponto fica visível para toda a rede.</p>
             </div>
+            <AddressSearch label="Buscar endereço para o ponto" value={f.address} city={f.city} onText={typeAddress} onPick={pickPlace} className="mb-3" />
             <div className={clsx("relative h-80 overflow-hidden rounded-3xl border border-line sm:h-96", errors.lat && "animate-shake ring-2 ring-coral")}>
-              <PickerMap value={f.lat !== null && f.lng !== null ? { lat: f.lat, lng: f.lng } : null} onChange={(lat, lng) => { set("lat", +lat.toFixed(6)); set("lng", +lng.toFixed(6)); setErrors((e) => ({ ...e, lat: "" })); }} />
+              <PickerMap value={f.lat !== null && f.lng !== null ? { lat: f.lat, lng: f.lng } : null} onChange={placePin} />
               {f.lat === null && (
                 <div className="pointer-events-none absolute inset-x-0 top-4 z-[500] flex justify-center">
-                  <span className="glass rounded-full px-4 py-2 text-sm font-semibold">👆 Clique no mapa para marcar seu ponto</span>
+                  <span className="glass rounded-full px-4 py-2 text-sm font-semibold">Toque no mapa para marcar seu ponto</span>
                 </div>
               )}
             </div>
+            {suggest && (
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-surface-2 px-4 py-2 text-sm" role="status">
+                <span>Este ponto fica perto de <strong>{suggest.address}</strong>.</span>
+                <Button variant="outline" size="sm" onClick={() => {
+                  const p = suggest;
+                  autoAddress.current = p.address;
+                  setSuggest(null);
+                  setF((s) => ({ ...s, address: p.address, neighborhood: p.neighborhood || s.neighborhood, city: p.city || s.city, state: p.state || s.state }));
+                }}>Usar este endereço</Button>
+              </div>
+            )}
             <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
               <p className="flex items-center gap-1.5 text-sm text-ink-faint">
                 <Info className="size-4" />
-                {f.lat !== null ? `Pin em ${f.lat.toFixed(5)}, ${f.lng!.toFixed(5)} · arraste para ajustar` : "Sem pin: seu negócio aparece só na lista."}
+                {f.lat !== null ? "Ponto marcado. Arraste o pin para ajustar." : "Sem pin: seu negócio aparece só na lista."}
               </p>
               <div className="flex gap-2">
-                {f.lat !== null && <Button variant="ghost" size="sm" onClick={() => { set("lat", null); set("lng", null); }}>Remover pin</Button>}
+                {f.lat !== null && <Button variant="ghost" size="sm" onClick={() => { lookup.current?.abort(); pinFor.current = null; confirmedNoPin.current = true; setSuggest(null); set("lat", null); set("lng", null); }}>Remover pin</Button>}
                 <Button variant="outline" size="sm" onClick={locate} loading={locating} icon={!locating && <LocateFixed className="size-4" />}>Minha localização</Button>
               </div>
             </div>
