@@ -1,8 +1,9 @@
 "use client";
 import { motion } from "motion/react";
-import { Lock, Sparkles, ShieldCheck, Store } from "lucide-react";
+import { Sparkles, ShieldCheck, Store } from "lucide-react";
 import { LinkButton } from "@/components/ui/button";
-import { PRICE_LABEL } from "@/lib/launch";
+import { PRICE_LABEL, REFERRAL_PRICE_LABEL } from "@/lib/plan";
+import { useApp } from "./providers";
 
 const ease = [0.16, 1, 0.3, 1] as const;
 
@@ -17,29 +18,30 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Visitante após o lançamento. */
-export function LockScreen() {
+/** Conta criada, mas sem negócio cadastrado. */
+export function JoinFirst() {
+  const { offer } = useApp();
   return (
     <Shell>
       <div className="card rounded-[2rem] p-8 text-center sm:p-10">
-        <motion.div initial={{ rotate: -20, scale: 0 }} animate={{ rotate: 0, scale: 1 }} transition={{ type: "spring", delay: 0.2 }} className="mx-auto mb-6 grid size-20 place-items-center rounded-3xl bg-gradient-to-br from-teal to-deep text-white shadow-xl">
-          <Lock className="size-9" />
-        </motion.div>
-        <h1 className="font-display text-4xl font-bold">A rede agora é exclusiva para assinantes</h1>
+        <Store className="mx-auto mb-5 size-10 text-teal" />
+        <h1 className="font-display text-4xl font-bold">Cadastre seu negócio para entrar</h1>
         <p className="mt-3 text-ink-soft">
-          O período aberto terminou em 15/01/2027. O mapa, os perfis e o chat do ConectaBC são reservados a donos de negócios com assinatura ativa de {PRICE_LABEL}/mês.
+          {offer?.left
+            ? `Seu primeiro mês é grátis, sem cartão: você será um dos ${offer.limit} primeiros negócios da rede.`
+            : `Depois do cadastro, a assinatura custa ${PRICE_LABEL}/mês, sem fidelidade.`}
         </p>
-        <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
-          <LinkButton href="/cadastro" variant="primary" size="lg">Assinar e entrar na rede</LinkButton>
-          <LinkButton href="/entrar" variant="outline" size="lg">Já sou membro</LinkButton>
-        </div>
+        <LinkButton href="/painel/meu-negocio" variant="primary" size="lg" className="mt-8">Cadastrar meu negócio</LinkButton>
       </div>
     </Shell>
   );
 }
 
-/** Membro sem assinatura ativa após o lançamento. */
+/** Membro com negócio, sem mês grátis nem assinatura. */
 export function Paywall() {
+  const { session } = useApp();
+  const m = session?.membership;
+  const price = m?.referredCode && (!session?.subscription || session.subscription.status === "incomplete") ? REFERRAL_PRICE_LABEL : PRICE_LABEL;
   return (
     <Shell>
       <div className="conic-border rounded-[2rem]">
@@ -47,9 +49,9 @@ export function Paywall() {
           <div className="mx-auto mb-6 grid size-20 place-items-center rounded-3xl bg-gradient-to-br from-coral to-[#ffb36b] text-white shadow-xl">
             <Sparkles className="size-9" />
           </div>
-          <h1 className="font-display text-4xl font-bold">Falta só ativar sua assinatura</h1>
+          <h1 className="font-display text-4xl font-bold">{m?.freeUntil ? "Seu mês grátis terminou" : "Falta só ativar sua assinatura"}</h1>
           <p className="mt-3 text-ink-soft">
-            O mapa, o diretório, as conversas e as parcerias são liberados para membros com assinatura ativa. Enquanto isso, seu negócio fica oculto para a rede —{" "}
+            Contatos, conversas e parcerias são liberados para membros com assinatura ativa. Enquanto isso, seu negócio fica oculto para a rede e{" "}
             <strong className="text-ink">nenhum dado é apagado</strong>.
           </p>
           <ul className="mx-auto mt-6 max-w-xs space-y-2 text-left text-sm text-ink-soft">
@@ -57,7 +59,7 @@ export function Paywall() {
             <li className="flex gap-2"><Store className="size-4 shrink-0 text-teal" /> Ao assinar, seu perfil volta a aparecer na hora.</li>
           </ul>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
-            <LinkButton href="/painel/assinatura" variant="primary" size="lg">Assinar por {PRICE_LABEL}/mês</LinkButton>
+            <LinkButton href="/painel/assinatura" variant="primary" size="lg">Assinar por {price}/mês</LinkButton>
             <LinkButton href="/painel/meu-negocio" variant="outline" size="lg">Editar meu negócio</LinkButton>
           </div>
         </div>

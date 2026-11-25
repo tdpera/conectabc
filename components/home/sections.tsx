@@ -4,17 +4,17 @@ import { clsx } from "clsx";
 import { motion, useInView, useMotionValue, useSpring, useTransform } from "motion/react";
 import { useRef, type ReactNode } from "react";
 import {
-  ArrowRight, BadgeCheck, Check, Handshake, Lock, MapPinned, MessagesSquare, Navigation, ShieldCheck, Sparkles, Store, Users,
+  ArrowRight, BadgeCheck, Check, Handshake, MapPinned, MessagesSquare, Navigation, ShieldCheck, Sparkles, Store, Users,
 } from "lucide-react";
 import { CATEGORIES, category } from "@/lib/categories";
 import { relativeDate } from "@/lib/format";
-import { PRICE_LABEL } from "@/lib/launch";
+import { PRICE_LABEL, REFERRAL_MONTHS, REFERRAL_PERCENT } from "@/lib/plan";
 import { Cover } from "@/components/ui/cover";
 import { Empty, SectionTitle } from "@/components/ui/misc";
 import { LinkButton, Magnetic } from "@/components/ui/button";
-import { FlipClock } from "@/components/app/countdown";
+import { OfferMeter } from "@/components/app/offer";
+import { useApp } from "@/components/app/providers";
 import { BayMap, pinsFrom } from "./bay-map";
-import { decorativePins } from "@/lib/bay";
 import type { DirectoryEntry } from "@/lib/backend/types";
 
 const ease = [0.16, 1, 0.3, 1] as const;
@@ -65,12 +65,10 @@ export function Odometer({ value, className }: { value: number; className?: stri
   );
 }
 
-export function Stats({ businesses, locked }: { businesses: DirectoryEntry[]; locked: boolean }) {
+export function Stats({ businesses }: { businesses: DirectoryEntry[] }) {
   const segments = new Set(businesses.map((b) => b.category)).size;
   const hoods = new Set(businesses.map((b) => b.neighborhood).filter(Boolean)).size;
-  const items = locked
-    ? []
-    : [
+  const items = [
         { v: businesses.length, label: "negócios na rede", icon: Store },
         { v: segments, label: "segmentos diferentes", icon: Sparkles },
         { v: hoods, label: "bairros conectados", icon: MapPinned },
@@ -78,13 +76,6 @@ export function Stats({ businesses, locked }: { businesses: DirectoryEntry[]; lo
   return (
     <section id="numeros" className="relative bg-[#01141a] pb-28 pt-10 text-white">
       <div className="mx-auto max-w-7xl px-5 sm:px-8">
-        {locked ? (
-          <Reveal className="mx-auto max-w-2xl text-center">
-            <Lock className="mx-auto mb-4 size-8 text-aqua" />
-            <p className="font-display text-3xl font-bold">O diretório agora é exclusivo para assinantes.</p>
-            <p className="mt-3 text-white/60">Entre ou assine para ver o mapa completo e falar com os negócios.</p>
-          </Reveal>
-        ) : (
           <div className="grid gap-px overflow-hidden rounded-[2rem] border border-white/10 bg-white/10 sm:grid-cols-3">
             {items.map((it, i) => (
               <Reveal key={it.label} delay={i * 0.1} className="bg-[#01141a] p-8 sm:p-10">
@@ -96,7 +87,6 @@ export function Stats({ businesses, locked }: { businesses: DirectoryEntry[]; lo
               </Reveal>
             ))}
           </div>
-        )}
       </div>
       <svg className="absolute inset-x-0 -bottom-px h-16 w-full text-bg sm:h-24" viewBox="0 0 1440 100" preserveAspectRatio="none" aria-hidden>
 <path fill="#3fd0c9" fillOpacity=".12" d="M0 40 C 300 90 520 0 820 40 S 1260 80 1440 20 V100 H0Z" />
@@ -162,9 +152,8 @@ export function BusinessTile({ b, distance }: { b: DirectoryEntry; distance?: st
   );
 }
 
-export function Latest({ businesses, locked }: { businesses: DirectoryEntry[]; locked: boolean }) {
+export function Latest({ businesses }: { businesses: DirectoryEntry[] }) {
   const latest = [...businesses].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 3);
-  if (locked) return null;
   return (
     <section className="relative mx-auto max-w-7xl px-5 py-24 sm:px-8 sm:py-32">
       <div className="flex flex-wrap items-end justify-between gap-6">
@@ -277,6 +266,8 @@ export function Values() {
 
 /* ---------------- Planos ---------------- */
 export function Pricing({ loggedIn }: { loggedIn: boolean }) {
+  const { offer } = useApp();
+  const free = !offer || offer.left > 0;
   const perks = ["Mapa completo com contatos", "Chat privado ilimitado", "Propostas de parceria", "Seu negócio visível para a rede", "Cancele quando quiser"];
   return (
     <section id="planos" className="relative overflow-hidden bg-[#01141a] py-24 text-white sm:py-32">
@@ -284,14 +275,13 @@ export function Pricing({ loggedIn }: { loggedIn: boolean }) {
       <div className="pointer-events-none absolute -right-40 bottom-0 size-[520px] rounded-full bg-coral/15 blur-[120px]" />
       <div className="relative mx-auto max-w-7xl px-5 sm:px-8">
         <Reveal className="text-center">
-          <p className="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-aqua">Lançamento oficial</p>
           <h2 className="font-display text-5xl font-bold leading-[0.95] sm:text-7xl">
-            Grátis até <span className="text-gradient">15 de janeiro</span>
+            {free ? <>Primeiro mês grátis<br /><span className="text-gradient">para os 100 primeiros</span></> : <>Uma assinatura <span className="text-gradient">simples</span></>}
           </h2>
-          <p className="mx-auto mt-5 max-w-xl text-lg text-white/65">Use tudo sem pagar nada até o lançamento. Depois, uma assinatura simples, sem fidelidade.</p>
+          <p className="mx-auto mt-5 max-w-xl text-lg text-white/65">{free ? "Cadastre seu negócio e use tudo por um mês, sem cartão. Depois, uma assinatura simples, sem fidelidade." : "Acesso completo à rede, cobrado mensalmente em reais, sem fidelidade."}</p>
         </Reveal>
         <Reveal delay={0.1} className="mt-12 flex justify-center">
-          <FlipClock light />
+          <OfferMeter />
         </Reveal>
         <Reveal delay={0.2} className="mx-auto mt-16 max-w-lg">
           <div className="conic-border rounded-[2rem]">
@@ -300,10 +290,10 @@ export function Pricing({ loggedIn }: { loggedIn: boolean }) {
                 <div>
                   <p className="font-semibold text-aqua">Membro ConectaBC</p>
                   <p className="mt-2 flex items-end gap-1">
-                    <span className="font-display text-6xl font-bold">{PRICE_LABEL}</span>
+                    <span className="font-display whitespace-nowrap text-5xl font-bold sm:text-6xl">{PRICE_LABEL}</span>
                     <span className="mb-2 text-white/50">/mês</span>
                   </p>
-                  <p className="text-sm text-white/50">a partir de 15/01/2027 · cobrança recorrente em reais</p>
+                  <p className="text-sm text-white/50">{free ? "depois do mês grátis, em reais" : "cobrança mensal em reais"}</p>
                 </div>
                 <BadgeCheck className="size-8 text-aqua" />
               </div>
@@ -319,11 +309,11 @@ export function Pricing({ loggedIn }: { loggedIn: boolean }) {
               </ul>
               <Magnetic className="mt-9 w-full" strength={0.15}>
                 <LinkButton href={loggedIn ? "/painel/assinatura" : "/cadastro"} variant="primary" size="lg" className="w-full">
-                  Garantir minha vaga <ArrowRight className="size-4" />
+                  {free ? "Garantir meu mês grátis" : "Criar conta"} <ArrowRight className="size-4" />
                 </LinkButton>
               </Magnetic>
               <p className="mt-4 text-center text-xs text-white/45">
-                Cadastre o cartão agora e a primeira cobrança só acontece em 15/01/2027. Pagamento processado pelo Stripe — seu cartão nunca passa pelo ConectaBC.
+                Tem um código de indicação? Ganhe {REFERRAL_PERCENT}% de desconto nas {REFERRAL_MONTHS} primeiras mensalidades. Pagamento processado pelo Stripe: seu cartão nunca passa pelo ConectaBC.
               </p>
             </div>
           </div>
@@ -334,8 +324,8 @@ export function Pricing({ loggedIn }: { loggedIn: boolean }) {
 }
 
 /* ---------------- Fechamento ---------------- */
-export function Closing({ businesses, locked }: { businesses: DirectoryEntry[]; locked: boolean }) {
-  const pins = locked ? decorativePins(30) : pinsFrom(businesses);
+export function Closing({ businesses }: { businesses: DirectoryEntry[] }) {
+  const pins = pinsFrom(businesses);
   const ref = useRef<HTMLDivElement>(null);
   const inView = useInView(ref, { once: true, margin: "-100px" });
   return (
@@ -343,7 +333,7 @@ export function Closing({ businesses, locked }: { businesses: DirectoryEntry[]; 
       <div className="mx-auto grid max-w-7xl items-center gap-10 px-5 sm:px-8 lg:grid-cols-2">
         <div ref={ref} className="relative order-2 mx-auto aspect-[3/4] w-full max-w-md lg:order-1">
           <motion.div initial={{ opacity: 0, scale: 0.85, rotate: -6 }} animate={inView ? { opacity: 1, scale: 1, rotate: 0 } : {}} transition={{ duration: 1.6, ease }} className="size-full">
-            <BayMap pins={pins} glow interactive={!locked} idPrefix="cl" className="size-full drop-shadow-[0_0_40px_rgba(63,208,201,0.25)]" />
+            <BayMap pins={pins} glow interactive idPrefix="cl" className="size-full drop-shadow-[0_0_40px_rgba(63,208,201,0.25)]" />
           </motion.div>
         </div>
         <Reveal className="order-1 lg:order-2">

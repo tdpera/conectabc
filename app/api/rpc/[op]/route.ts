@@ -11,20 +11,26 @@ type Body = Record<string, unknown>;
 
 const OPS: Record<string, (ctx: Awaited<ReturnType<typeof serverCtx>>, b: Body, req: Request) => Promise<unknown>> = {
   async session(ctx) {
-    if (!ctx.userId) return { user: null, business: null, subscription: null, entitled: false };
-    const [business, subscription, entitled] = await Promise.all([
+    // a oferta é só informativa: se falhar, a sessão continua
+    const offer = await core.offer(ctx).catch(() => null);
+    if (!ctx.userId) return { user: null, business: null, subscription: null, entitled: false, membership: null, referrals: 0, pendingCode: null, offer };
+    const [business, subscription, entitled, membership] = await Promise.all([
       ctx.repo.getBusinessByOwner(ctx.userId),
       ctx.repo.getSubscription(ctx.userId),
       ctx.isEntitled(ctx.userId),
+      ctx.repo.getMembership(ctx.userId),
     ]);
     return {
       user: { id: ctx.userId, email: ctx.email ?? "", name: ctx.name ?? ctx.email?.split("@")[0] ?? "", isAdmin: ctx.isAdmin },
-      business, subscription, entitled,
+      business, subscription, entitled, membership,
+      referrals: membership ? await ctx.repo.countReferrals(membership.referralCode) : 0,
+      pendingCode: ctx.pendingCode, offer,
     };
   },
   directory: (ctx) => core.directory(ctx),
   business: (ctx, b) => core.businessById(ctx, String(b.id)),
-  saveBusiness: (ctx, b) => core.saveMyBusiness(ctx, b),
+  saveBusiness: (ctx, b) => core.saveMyBusiness(ctx, b, b.referralCode),
+  checkReferral: (ctx, b) => core.checkReferral(ctx, b.code),
   conversations: (ctx) => core.conversations(ctx),
   thread: (ctx, b) => core.thread(ctx, String(b.id)),
   send: (ctx, b) => core.sendMessage(ctx, String(b.id), b.body),

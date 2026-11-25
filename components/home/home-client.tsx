@@ -9,13 +9,11 @@ import { Footer } from "@/components/app/footer";
 import { useApp } from "@/components/app/providers";
 import { backend } from "@/lib/backend";
 import type { DirectoryEntry } from "@/lib/backend/types";
-import { decorativePins } from "@/lib/bay";
 
 export function HomeClient() {
-  const { session, loading, launched } = useApp();
+  const { session, loading } = useApp();
   const [list, setList] = useState<DirectoryEntry[]>([]);
   const [ready, setReady] = useState(false);
-  const [locked, setLocked] = useState(false);
 
   useEffect(() => {
     if (loading) return;
@@ -25,7 +23,6 @@ export function HomeClient() {
       .listDirectory()
       .then((r) => {
         setList(r.businesses);
-        setLocked(r.locked || r.paywalled);
       })
       .catch(() => {})
       .finally(() => {
@@ -34,21 +31,21 @@ export function HomeClient() {
         setReady(true);
       });
     return () => clearTimeout(fallback);
-  }, [loading, session?.user?.id, launched]);
+  }, [loading, session?.user?.id, session?.entitled]);
 
-  const pins = useMemo(() => (locked ? decorativePins(26) : pinsFrom(list)), [list, locked]);
+  const pins = useMemo(() => pinsFrom(list), [list]);
 
   return (
     <main>
       <SmoothScroll />
-      <Hero businesses={list} ready={ready} locked={locked} />
-      <Stats businesses={list} locked={locked} />
-      <Latest businesses={list} locked={locked} />
+      <Hero businesses={list} ready={ready} />
+      <Stats businesses={list} />
+      <Latest businesses={list} />
       <PhoneStory pins={pins} />
       <Marquee />
       <Values />
       <Pricing loggedIn={!!session?.user} />
-      <Closing businesses={list} locked={locked} />
+      <Closing businesses={list} />
       <Footer />
     </main>
   );

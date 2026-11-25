@@ -52,25 +52,23 @@ await page.waitForFunction((n) => [...document.querySelectorAll("button")].filte
 const after = await page.getByRole("button", { name: "Aceitar" }).count();
 check(`aceitar proposta muda o status (${before}→${after})`, after === before - 1);
 
-// Pós-lançamento: membro sem assinatura vê paywall
-await page.goto(base + "/explorar?agora=2027-01-16T12:00:00Z");
-await page.waitForSelector("text=Falta só ativar sua assinatura", { timeout: 8000 });
-check("paywall pós-lançamento para quem não paga", true);
-// Assina pela demo
+// Depois do mês grátis: membro sem assinatura perde o acesso e some do mapa
+const later = new Date(Date.now() + 35 * 86400000).toISOString();
+await page.goto(base + "/painel?agora=" + later);
+await page.waitForSelector("text=Seu mês grátis terminou", { timeout: 8000 });
+check("fim do mês grátis bloqueia quem não paga", true);
 await page.goto(base + "/painel/assinatura/checkout-demo");
 await page.getByRole("button", { name: /Assinar \(simulação\)/ }).click();
 await page.waitForURL(/\/painel\/assinatura(\?status=sucesso)?$/, { timeout: 10000 });
-await page.waitForSelector("text=Ativa", { timeout: 8000 });
 await page.goto(base + "/explorar");
 await page.waitForSelector("main a[href^='/negocio/']", { timeout: 10000 });
 await page.waitForTimeout(800);
 const n = await page.locator("main a[href^='/negocio/']").count();
-check(`assinante vê só negócios pagantes (${n} de 40)`, n > 0 && n < 40);
-// Visitante pós-lançamento vê bloqueio
+check(`assinante vê só negócios com acesso (${n} de 40)`, n > 0 && n < 40);
 await page.evaluate(() => localStorage.removeItem("conectabc:demo-session"));
 await page.goto(base + "/explorar");
-await page.waitForSelector("text=exclusiva para assinantes", { timeout: 8000 });
-check("visitante pós-lançamento vê tela de bloqueio", true);
+await page.waitForSelector("text=versão pública", { timeout: 8000 });
+check("visitante vê o mapa público", true);
 
 check("sem erros de página", errors.length === 0);
 if (errors.length) console.log(errors);

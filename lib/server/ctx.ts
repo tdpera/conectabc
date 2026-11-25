@@ -1,7 +1,8 @@
 import "server-only";
 import type { Ctx } from "../core";
 import { supabaseRepo } from "./repo";
-import { isEntitled } from "./entitlement";
+import { forgetEntitlement, isEntitled } from "./entitlement";
+import { normalizeCode } from "../plan";
 import { adminClient, userClient } from "./supabase";
 
 export async function currentUser() {
@@ -10,7 +11,7 @@ export async function currentUser() {
   return data.user ?? null;
 }
 
-export async function serverCtx(): Promise<Ctx & { email: string | null; name: string | null }> {
+export async function serverCtx(): Promise<Ctx & { email: string | null; name: string | null; pendingCode: string | null }> {
   const user = await currentUser();
   let isAdmin = false;
   if (user) {
@@ -24,6 +25,8 @@ export async function serverCtx(): Promise<Ctx & { email: string | null; name: s
     isAdmin,
     now: new Date(),
     isEntitled: (id) => isEntitled(id),
+    onMembership: forgetEntitlement,
+    pendingCode: normalizeCode(user?.user_metadata?.referral_code),
     email: user?.email ?? null,
     name: (user?.user_metadata?.name as string) ?? null,
   };

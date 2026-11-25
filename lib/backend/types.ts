@@ -9,9 +9,7 @@ export interface DirectoryResult {
   businesses: DirectoryEntry[];
   /** true quando o usuário é membro com acesso (contatos incluídos). */
   full: boolean;
-  /** true quando a janela pública fechou e o visitante deve ver o bloqueio. */
-  locked: boolean;
-  /** true quando o membro não tem assinatura ativa após o lançamento. */
+  /** true quando o membro logado não tem mês grátis nem assinatura ativos. */
   paywalled: boolean;
 }
 
@@ -25,7 +23,7 @@ export interface Backend {
   getSession(): Promise<Session>;
 
   signIn(email: string, password: string): Promise<void>;
-  signUp(email: string, password: string, name: string): Promise<{ needsVerification: boolean }>;
+  signUp(email: string, password: string, name: string, referralCode?: string | null): Promise<{ needsVerification: boolean }>;
   verifyCode(email: string, code: string): Promise<void>;
   resendCode(email: string): Promise<void>;
   signInWithGoogle(): Promise<void>;
@@ -37,7 +35,8 @@ export interface Backend {
 
   listDirectory(): Promise<DirectoryResult>;
   getBusiness(id: string): Promise<DirectoryEntry | null>;
-  saveMyBusiness(input: BusinessInput): Promise<Business>;
+  saveMyBusiness(input: BusinessInput, referralCode?: string | null): Promise<Business>;
+  checkReferral(code: string): Promise<{ businessName: string } | null>;
 
   listConversations(): Promise<Conversation[]>;
   getThread(businessId: string): Promise<Message[]>;

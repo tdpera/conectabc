@@ -1,7 +1,7 @@
 "use client";
 /**
- * Relógio do app. No modo demonstração, `?agora=2027-01-16` simula outra data
- * (útil para ver o paywall pós-lançamento). Fora da demo, sempre o horário real.
+ * Relógio do app. No modo demonstração, `?agora=2027-02-01` simula outra data
+ * (útil para ver o fim do mês grátis). Fora da demo, sempre o horário real.
  */
 const KEY = "conectabc:agora";
 

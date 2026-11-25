@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Cover } from "@/components/ui/cover";
 import { toast } from "@/components/ui/toast";
 import { CATEGORIES } from "@/lib/categories";
+import { ReferralField, savedCode, saveCode } from "@/components/app/referral-field";
 import { AddressSearch } from "@/components/map/address-search";
 import { reversePlace, searchPlaces, type Place } from "@/lib/places";
 import { backend } from "@/lib/backend";
@@ -52,6 +53,8 @@ function BusinessForm() {
   const [busy, setBusy] = useState(false);
   const [locating, setLocating] = useState(false);
   const [section, setSection] = useState("info");
+  const [code, setCode] = useState("");
+  useEffect(() => { if (!existing) setCode((c) => c || session?.pendingCode || savedCode()); }, [existing, session?.pendingCode]);
   const refs = useRef<Record<string, HTMLElement | null>>({});
   /** Endereço a que o pin corresponde; null = marcado à mão, não mexer sozinho. */
   const pinFor = useRef<string | null>(null);
@@ -188,7 +191,8 @@ function BusinessForm() {
     }
     setBusy(true);
     try {
-      await backend.saveMyBusiness(r.data as BusinessInput);
+      await backend.saveMyBusiness(r.data as BusinessInput, existing ? null : code);
+      if (!existing) saveCode(null);
       await refresh();
       router.push("/explorar?salvo=1");
     } catch (e) {
@@ -259,6 +263,7 @@ function BusinessForm() {
                 {["SC", "PR", "RS", "SP", "RJ", "MG", "Outro"].map((s) => <option key={s} value={s === "Outro" ? "" : s}>{s}</option>)}
               </Select>
               <Field label="Horário de funcionamento" {...bind("hours")} maxLength={200} className="sm:col-span-2" hint="Ex.: Seg a sáb, 8h às 19h" />
+              {!existing && <ReferralField value={code} onChange={setCode} className="sm:col-span-2" />}
             </div>
           </Card>
 

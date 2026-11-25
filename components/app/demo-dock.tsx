@@ -11,13 +11,13 @@ import { toast } from "@/components/ui/toast";
 
 /** Painel flutuante para avaliadores explorarem a demo: troca de conta, viagem no tempo e reset. */
 export function DemoDock() {
-  const { demo, session, refresh, launched } = useApp();
+  const { demo, session, refresh } = useApp();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [travel, setTravel] = useState(false);
 
-  useEffect(() => setTravel(timeTravelActive()), [launched]);
+  useEffect(() => setTravel(timeTravelActive()), [session]);
   if (!demo) return null;
 
   const act = async (key: string, fn: () => Promise<unknown>, msg: string, go?: string) => {
@@ -79,9 +79,9 @@ export function DemoDock() {
             <p className="mb-1.5 mt-4 text-[11px] font-bold uppercase tracking-widest text-ink-faint">Viajar no tempo</p>
             <div className="grid grid-cols-2 gap-1.5">
               <DockBtn icon={CalendarClock} active={!travel} onClick={() => goTime("real")}>Hoje</DockBtn>
-              <DockBtn icon={CalendarClock} active={travel && launched} onClick={() => goTime("2027-01-16T12:00:00Z")}>Pós-lançamento</DockBtn>
+              <DockBtn icon={CalendarClock} active={travel} onClick={() => goTime(new Date(Date.now() + 35 * 86400000).toISOString())}>Daqui a 35 dias</DockBtn>
             </div>
-            <p className="mt-1.5 text-[11px] leading-snug text-ink-faint">“Pós-lançamento” simula 16/01/2027: o paywall entra em vigor e visitantes veem a tela de bloqueio.</p>
+            <p className="mt-1.5 text-[11px] leading-snug text-ink-faint">Em 35 dias o mês grátis já terminou: só quem assina continua visível.</p>
 
             <button
               onClick={() => act("r", () => backend.demoReset!(), "Dados da demo restaurados.")}
@@ -103,7 +103,7 @@ export function DemoDock() {
           <FlaskConical className="size-3.5" />
           <span className="absolute inset-0 rounded-full bg-coral/60 animate-sonar" />
         </span>
-        <span className="hidden lg:inline">Demo{travel && launched ? " · 16/01/2027" : ""}</span>
+        <span className="hidden lg:inline">Demo{travel ? " · em 35 dias" : ""}</span>
       </motion.button>
     </div>
   );

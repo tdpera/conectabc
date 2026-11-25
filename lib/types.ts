@@ -85,6 +85,22 @@ export interface Subscription {
   currency: string;
 }
 
+/** Participação na rede: criada uma vez, quando o negócio é cadastrado. */
+export interface Membership {
+  userId: string;
+  /** 1 a 100 para quem ganhou o mês grátis. */
+  founderNumber: number | null;
+  freeUntil: string | null;
+  referralCode: string;
+  /** Código usado no cadastro; garante o desconto de indicação. */
+  referredCode: string | null;
+}
+
+export interface Offer {
+  limit: number;
+  left: number;
+}
+
 export interface SessionUser {
   id: string;
   email: string;
@@ -97,6 +113,12 @@ export interface Session {
   business: Business | null;
   subscription: Subscription | null;
   entitled: boolean;
+  membership: Membership | null;
+  /** Quantos negócios entraram com o meu código. */
+  referrals: number;
+  /** Código digitado no cadastro da conta, ainda não usado. */
+  pendingCode: string | null;
+  offer: Offer | null;
 }
 
 export interface Conversation {
@@ -122,6 +144,9 @@ export interface AdminRow {
   joinedAt: string | null;
   business: Business | null;
   subscription: SubscriptionStatus;
+  membership: Membership | null;
+  freeActive: boolean;
+  referrals: number;
 }
 
 export interface AdminStats {
@@ -132,7 +157,9 @@ export interface AdminStats {
   /** Só a contagem: o painel não lê o conteúdo das conversas. */
   messages: number;
   activeSubscribers: number;
-  earlyRegistrations: number;
+  foundersUsed: number;
+  foundersLimit: number;
+  referredBusinesses: number;
   projectedMrr: number;
   config: { key: string; label: string; ok: boolean; detail?: string }[];
   mode: "test" | "live" | "unset";

@@ -13,7 +13,6 @@ import type { Business, Partnership } from "@/lib/types";
 import { category } from "@/lib/categories";
 import { instagramLink, websiteLink, whatsappLink } from "@/lib/format";
 import { useApp } from "@/components/app/providers";
-import { LockScreen, Paywall } from "@/components/app/gates";
 import { Cover } from "@/components/ui/cover";
 import { CategoryBadge, Empty, Skeleton } from "@/components/ui/misc";
 import { Button, LinkButton } from "@/components/ui/button";
@@ -30,7 +29,7 @@ function isFull(b: DirectoryEntry): b is Business {
 
 export default function ProfilePage() {
   const { id } = useParams<{ id: string }>();
-  const { session, loading, launched } = useApp();
+  const { session, loading } = useApp();
   const [b, setB] = useState<DirectoryEntry | null | undefined>(undefined);
   const [live, setLive] = useState<Partnership | null>(null);
   const [propose, setPropose] = useState(false);
@@ -47,10 +46,7 @@ export default function ProfilePage() {
     if (loading) return;
     backend.getBusiness(id).then(setB).catch(() => setB(null));
     loadLive();
-  }, [id, loading, launched, loadLive]);
-
-  if (!loading && launched && !session?.user) return <LockScreen />;
-  if (!loading && launched && session?.user && !session.entitled && session.business?.id !== id) return <Paywall />;
+  }, [id, loading, session?.entitled, loadLive]);
 
   if (b === null)
     return (
@@ -108,6 +104,8 @@ export default function ProfilePage() {
               </>
             ) : !hasBiz ? (
               <LinkButton href="/painel/meu-negocio" variant="primary">Cadastre seu negócio para conectar</LinkButton>
+            ) : !session?.entitled ? (
+              <LinkButton href="/painel/assinatura" variant="primary">Ative seu acesso para conversar</LinkButton>
             ) : (
               <>
                 <LinkButton href={`/painel/conversas/${b.id}`} variant="brand" icon={<MessagesSquare className="size-4" />}>Conversar</LinkButton>
@@ -180,7 +178,7 @@ export default function ProfilePage() {
                   <li className="rounded-2xl bg-surface-2 p-4 text-ink-soft">
                     <Lock className="mb-2 size-5 text-teal" />
                     Telefone, WhatsApp, Instagram e site ficam visíveis apenas para membros.{" "}
-                    <Link href="/cadastro" className="font-semibold text-teal hover:underline">Criar conta grátis</Link>
+                    <Link href={!member ? "/cadastro" : hasBiz ? "/painel/assinatura" : "/painel/meu-negocio"} className="font-semibold text-teal hover:underline">{!member ? "Criar conta" : hasBiz ? "Ativar meu acesso" : "Cadastrar meu negócio"}</Link>
                   </li>
                 )}
               </ul>

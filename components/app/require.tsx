@@ -3,9 +3,9 @@ import { useRouter, usePathname } from "next/navigation";
 import { useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import { useApp } from "./providers";
-import { Paywall } from "./gates";
+import { JoinFirst, Paywall } from "./gates";
 
-/** Exige login; com `paywall`, exige também assinatura ativa após o lançamento. */
+/** Exige login; com `paywall`, exige também mês grátis ou assinatura ativos. */
 export function RequireMember({ children, paywall, admin }: { children: React.ReactNode; paywall?: boolean; admin?: boolean }) {
   const { session, loading } = useApp();
   const router = useRouter();
@@ -20,6 +20,6 @@ export function RequireMember({ children, paywall, admin }: { children: React.Re
         <Loader2 className="size-6 animate-spin text-teal" />
       </div>
     );
-  if (paywall && !session.entitled) return <div className="pt-[var(--hh,96px)]"><Paywall /></div>;
+  if (paywall && !session.entitled) return <div className="pt-[var(--hh,96px)]">{session.business ? <Paywall /> : <JoinFirst />}</div>;
   return <>{children}</>;
 }

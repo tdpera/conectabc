@@ -7,11 +7,11 @@ import * as core from "../core";
 import type { Repo } from "../core";
 import { buildSeed, DEMO_ADMIN, DEMO_DB_VERSION, DEMO_USER, type DemoDb } from "../seed";
 import { now } from "../clock";
-import { earlySignupOpen, isLaunched, LAUNCH_AT, PRICE_CENTS } from "../launch";
+import { addMonth, checkoutTrialEnd, FOUNDER_LIMIT, freeActive, normalizeCode, PRICE_CENTS } from "../plan";
 import { RuleError, subscriptionEntitles } from "../rules";
 import type { Backend } from "./types";
 import { BackendError } from "./types";
-import type { Business, Message, Partnership, Session, Subscription } from "../types";
+import type { Business, Membership, Message, Partnership, Session, Subscription } from "../types";
 
 const DB_KEY = "conectabc:demo-db";
 const SESSION_KEY = "conectabc:demo-session";
@@ -27,7 +27,7 @@ function load(): DemoDb {
     const raw = localStorage.getItem(DB_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as DemoDb;
-      if (parsed.version === DEMO_DB_VERSION) return (memory = parsed);
+      if (parsed.version === DEMO_DB_VERSION && Date.now() - parsed.seededAt < 15 * 86400000) return (memory = parsed);
     }
   } catch {}
   memory = buildSeed();
@@ -152,6 +152,41 @@ const repo: Repo = {
   async listSubscriptions() {
     return clone(load().subscriptions);
   },
+  async getMembership(userId) {
+    return clone(load().memberships.find((m) => m.userId === userId) ?? null);
+  },
+  async getMembershipByCode(code) {
+    return clone(load().memberships.find((m) => m.referralCode === code) ?? null);
+  },
+  async listMemberships() {
+    return clone(load().memberships);
+  },
+  async claimMembership(userId, code, founder) {
+    const db = load();
+    const have = db.memberships.find((m) => m.userId === userId);
+    if (have) return clone(have);
+    const free = founder && db.foundersUsed < FOUNDER_LIMIT;
+    if (free) db.foundersUsed++;
+    const row: Membership = {
+      userId,
+      founderNumber: free ? db.foundersUsed : null,
+      freeUntil: free ? addMonth(now()).toISOString() : null,
+      referralCode: uid().toUpperCase().padEnd(6, "0").slice(0, 6),
+      referredCode: code,
+    };
+    db.memberships.push(row);
+    save();
+    return clone(row);
+  },
+  async countReferrals(code) {
+    return load().memberships.filter((m) => m.referredCode === code).length;
+  },
+  async foundersUsed() {
+    return load().foundersUsed;
+  },
+  async listAdminIds() {
+    return load().users.filter((u) => u.isAdmin).map((u) => u.id);
+  },
   async listProfiles() {
     return clone(load().users.map((u) => ({ ...u, createdAt: null })));
   },
@@ -173,6 +208,7 @@ function ctx(): core.Ctx {
     async isEntitled(userId) {
       const u = load().users.find((x) => x.id === userId);
       if (u?.isAdmin) return true;
+      if (freeActive(load().memberships.find((m) => m.userId === userId), now())) return true;
       return subscriptionEntitles(load().subscriptions.find((s) => s.userId === userId) ?? null, now());
     },
   };
@@ -235,7 +271,7 @@ function setPassword(email: string, pw: string) {
     localStorage.setItem(PW_KEY, JSON.stringify(all));
   } catch {}
 }
-const pending = new Map<string, { password: string; name: string }>();
+const pending = new Map<string, { password: string; name: string; code?: string | null }>();
 
 export const demoBackend: Backend = {
   mode: "demo",
@@ -243,12 +279,18 @@ export const demoBackend: Backend = {
   async getSession(): Promise<Session> {
     const c = ctx();
     const user = c.userId ? users().find((u) => u.id === c.userId)! : null;
-    if (!user) return { user: null, business: null, subscription: null, entitled: false };
+    const offer = await core.offer(c);
+    if (!user) return { user: null, business: null, subscription: null, entitled: false, membership: null, referrals: 0, pendingCode: null, offer };
+    const membership = await repo.getMembership(user.id);
     return {
       user: { id: user.id, email: user.email, name: user.name, isAdmin: user.isAdmin },
       business: await repo.getBusinessByOwner(user.id),
       subscription: await repo.getSubscription(user.id),
       entitled: await c.isEntitled(user.id),
+      membership,
+      referrals: membership ? await repo.countReferrals(membership.referralCode) : 0,
+      pendingCode: load().pendingCodes[user.id] ?? null,
+      offer,
     };
   },
 
@@ -260,22 +302,23 @@ export const demoBackend: Backend = {
     if (!u || pw !== password) throw new BackendError("E-mail ou senha incorretos. Na demo, use voce@demo.conectabc / demo1234.", 401);
     setSession(u.id);
   },
-  async signUp(email, password, name) {
+  async signUp(email, password, name, referralCode) {
     await wait(500);
     const e = email.trim().toLowerCase();
     if (!/^\S+@\S+\.\S+$/.test(e)) throw new BackendError("Informe um e-mail válido.");
     if (password.length < 8) throw new BackendError("A senha precisa de pelo menos 8 caracteres.");
     if (users().some((u) => u.email === e)) throw new BackendError("Já existe uma conta com este e-mail.", 409);
-    pending.set(e, { password, name: name.trim() || e.split("@")[0] });
+    pending.set(e, { password, name: name.trim() || e.split("@")[0], code: normalizeCode(referralCode) });
     return { needsVerification: true };
   },
   async verifyCode(email, code) {
     await wait(500);
     const e = email.trim().toLowerCase();
     if (code !== DEMO_CODE) throw new BackendError(`Código incorreto. Na demo, o código é ${DEMO_CODE}.`);
-    const p = pending.get(e) ?? { password: "demo1234", name: e.split("@")[0] };
+    const p: { password: string; name: string; code?: string | null } = pending.get(e) ?? { password: "demo1234", name: e.split("@")[0] };
     const id = "u-" + uid();
     load().users.push({ id, email: e, name: p.name, isAdmin: false });
+    if (p.code) load().pendingCodes[id] = p.code;
     save();
     setPassword(e, p.password);
     pending.delete(e);
@@ -316,7 +359,8 @@ export const demoBackend: Backend = {
 
   listDirectory: () => run(() => core.directory(ctx())),
   getBusiness: (id) => run(() => core.businessById(ctx(), id), 120),
-  saveMyBusiness: (input) => run(() => core.saveMyBusiness(ctx(), input), 600),
+  saveMyBusiness: (input, code) => run(() => core.saveMyBusiness(ctx(), input, code), 600),
+  checkReferral: (code) => run(() => core.checkReferral(ctx(), code), 200),
   listConversations: () => run(() => core.conversations(ctx()), 150),
   getThread: (id) => run(() => core.thread(ctx(), id), 80),
   sendMessage: (id, body) =>
@@ -364,13 +408,14 @@ export const demoBilling = {
     if (!id) throw new BackendError("Entre na sua conta.", 401);
     const n = now();
     const db = load();
-    const launched = isLaunched(n);
-    if (!launched && !earlySignupOpen(n)) throw new BackendError("O cadastro antecipado está pausado nas 48h finais antes do lançamento.");
+    const member = db.memberships.find((m) => m.userId === id) ?? null;
+    if (!member) throw new BackendError("Cadastre seu negócio antes de assinar.", 409);
+    const trialEnd = checkoutTrialEnd(member, n);
     const sub: Subscription = {
       userId: id,
-      status: launched ? "active" : "trialing",
-      trialEnd: launched ? null : LAUNCH_AT.toISOString(),
-      currentPeriodEnd: launched ? new Date(n.getTime() + 30 * 86400000).toISOString() : null,
+      status: trialEnd ? "trialing" : "active",
+      trialEnd: trialEnd?.toISOString() ?? null,
+      currentPeriodEnd: trialEnd ? null : new Date(n.getTime() + 30 * 86400000).toISOString(),
       amount: PRICE_CENTS,
       currency: "brl",
     };

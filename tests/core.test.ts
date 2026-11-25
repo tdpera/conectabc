@@ -1,31 +1,86 @@
 import { describe, expect, it } from "vitest";
 import * as core from "@/lib/core";
+import { freeActive } from "@/lib/plan";
+import type { Membership } from "@/lib/types";
 import { biz, memoryRepo } from "./memory-repo";
 
-const BEFORE = new Date("2026-12-01T12:00:00Z");
-const AFTER = new Date("2027-02-01T12:00:00Z");
+const NOW = new Date("2026-12-01T12:00:00Z");
+const member = (userId: string, freeUntil: string | null, i = 0, referredCode: string | null = null): Membership => ({
+  userId, freeUntil, founderNumber: freeUntil ? i + 1 : null, referralCode: `CODE0${i}`, referredCode,
+});
+const FREE = "2026-12-20T00:00:00Z";
 
-function setup(now = BEFORE, paid: string[] = []) {
-  const { repo, db } = memoryRepo({ businesses: [biz(1, "a"), biz(2, "b"), biz(3, "c", { isVisible: false })] });
-  const ctx = (userId: string | null): core.Ctx => ({ repo, userId, isAdmin: false, now, isEntitled: async (u) => now < new Date("2027-01-15T03:00:00Z") || paid.includes(u) });
+/** `free`: quem está no mês grátis. */
+function setup(free: string[] = ["a", "b", "c"]) {
+  const all = ["a", "b", "c"];
+  const { repo, db } = memoryRepo({
+    now: NOW,
+    businesses: [biz(1, "a"), biz(2, "b"), biz(3, "c", { isVisible: false })],
+    members: all.map((u, i) => member(u, free.includes(u) ? FREE : "2026-11-20T00:00:00Z", i)),
+  });
+  const ctx = (userId: string | null, isAdmin = false): core.Ctx => ({
+    repo, userId, isAdmin, now: NOW, isEntitled: async (u) => freeActive(db.members.find((m) => m.userId === u), NOW),
+  });
   return { ctx, db };
 }
 
 describe("diretório", () => {
-  it("visitante vê dados sem contatos antes do lançamento", async () => {
+  it("visitante vê o mapa sem contatos", async () => {
     const r = await core.directory(setup().ctx(null));
-    expect(r.full).toBe(false);
-    expect(r.businesses).toHaveLength(2);
+    expect([r.full, r.paywalled, r.businesses.length]).toEqual([false, false, 2]);
     expect(r.businesses[0]).not.toHaveProperty("phone");
   });
-  it("visitante é bloqueado após o lançamento", async () => {
-    expect((await core.directory(setup(AFTER).ctx(null))).locked).toBe(true);
-  });
-  it("membro sem assinatura vê o paywall; pagante só vê donos pagantes", async () => {
-    const s = setup(AFTER, ["a"]);
-    expect((await core.directory(s.ctx("b"))).paywalled).toBe(true);
-    const r = await core.directory(s.ctx("a"));
+  it("quem está sem acesso some do mapa e vê só a versão pública", async () => {
+    const s = setup(["a"]);
+    const r = await core.directory(s.ctx("b"));
+    expect([r.full, r.paywalled]).toEqual([false, true]);
     expect(r.businesses.map((b) => b.id)).toEqual(["B1"]);
+    expect(r.businesses[0]).not.toHaveProperty("phone");
+    expect((await core.directory(s.ctx("a"))).businesses[0]).toHaveProperty("phone");
+    expect(await core.businessById(s.ctx(null), "B2")).toBeNull();
+    expect(await core.businessById(s.ctx("b"), "B1")).not.toHaveProperty("phone");
+    expect(await core.businessById(s.ctx("b"), "B2")).toHaveProperty("phone"); // o próprio
+  });
+});
+
+describe("mês grátis e indicação", () => {
+  const input = { name: "Novo", category: "bares", city: "BC" };
+  it("cada conta ganha um mês, uma única vez", async () => {
+    const { ctx, db } = setup();
+    await core.saveMyBusiness(ctx("z"), input);
+    await core.saveMyBusiness(ctx("z"), input);
+    const m = db.members.filter((x) => x.userId === "z");
+    expect(m).toHaveLength(1);
+    expect(m[0].freeUntil).toBe("2027-01-01T12:00:00.000Z");
+    expect(db.used).toBe(1);
+  });
+  it("o 101º entra sem mês grátis", async () => {
+    const { ctx, db } = setup();
+    db.used = 99;
+    await core.saveMyBusiness(ctx("y"), input);
+    await core.saveMyBusiness(ctx("z"), input);
+    expect(db.members.find((m) => m.userId === "y")!.founderNumber).toBe(100);
+    expect(db.members.find((m) => m.userId === "z")!.freeUntil).toBeNull();
+    expect((await core.offer(ctx(null))).left).toBe(0);
+  });
+  it("administrador não gasta vaga", async () => {
+    const { ctx, db } = setup();
+    await core.saveMyBusiness(ctx("z", true), input);
+    expect(db.used).toBe(0);
+  });
+  it("aceita código de membro e recusa inválido sem gastar vaga", async () => {
+    const { ctx, db } = setup();
+    expect(await core.checkReferral(ctx(null), "code 00")).toEqual({ businessName: "Negócio 1" });
+    expect(await core.checkReferral(ctx("a"), "CODE00")).toBeNull(); // o próprio código
+    await expect(core.saveMyBusiness(ctx("z"), input, "XXXXXX")).rejects.toThrow(/indicação/);
+    expect(db.used).toBe(0);
+    await core.saveMyBusiness(ctx("z"), input, "code00");
+    expect(db.members.find((m) => m.userId === "z")!.referredCode).toBe("CODE00");
+  });
+  it("código não pode ser acrescentado depois", async () => {
+    const { ctx, db } = setup();
+    await core.saveMyBusiness(ctx("b"), input, "CODE00");
+    expect(db.members.find((m) => m.userId === "b")!.referredCode).toBeNull();
   });
 });
 
@@ -54,10 +109,10 @@ describe("mensagens", () => {
     await expect(core.sendMessage(ctx("a"), "B2", "   ")).rejects.toThrow();
     await expect(core.sendMessage(ctx("a"), "B2", "x".repeat(2001))).rejects.toThrow();
   });
-  it("exige assinatura dos dois lados após o lançamento", async () => {
-    const { ctx } = setup(AFTER, ["a"]);
+  it("exige acesso ativo dos dois lados", async () => {
+    const { ctx } = setup(["a"]);
     await expect(core.sendMessage(ctx("a"), "B2", "Oi")).rejects.toThrow(/não está disponível/);
-    await expect(core.sendMessage(ctx("b"), "B1", "Oi")).rejects.toThrow(/assinatura/);
+    await expect(core.sendMessage(ctx("b"), "B1", "Oi")).rejects.toThrow(/acesso/);
   });
 });
 

@@ -1,9 +1,10 @@
 import type { Repo } from "@/lib/core";
-import type { Business, Message, Partnership, Profile, Subscription } from "@/lib/types";
+import type { Business, Membership, Message, Partnership, Profile, Subscription } from "@/lib/types";
+import { addMonth } from "@/lib/plan";
 import { RuleError } from "@/lib/rules";
 
-export function memoryRepo(seed: { businesses?: Business[]; subs?: Subscription[]; profiles?: Profile[] } = {}) {
-  const db = { businesses: [...(seed.businesses ?? [])], messages: [] as Message[], partnerships: [] as Partnership[], subs: [...(seed.subs ?? [])], profiles: [...(seed.profiles ?? [])] };
+export function memoryRepo(seed: { businesses?: Business[]; subs?: Subscription[]; members?: Membership[]; now?: Date; profiles?: Profile[] } = {}) {
+  const db = { businesses: [...(seed.businesses ?? [])], messages: [] as Message[], partnerships: [] as Partnership[], subs: [...(seed.subs ?? [])], profiles: [...(seed.profiles ?? [])], members: [...(seed.members ?? [])], used: 0 };
   let n = 0;
   const id = (p: string) => `${p}${++n}`;
   const repo: Repo = {
@@ -43,6 +44,20 @@ export function memoryRepo(seed: { businesses?: Business[]; subs?: Subscription[
     },
     getSubscription: async (u) => db.subs.find((s) => s.userId === u) ?? null,
     listSubscriptions: async () => db.subs,
+    getMembership: async (u) => db.members.find((m) => m.userId === u) ?? null,
+    getMembershipByCode: async (c) => db.members.find((m) => m.referralCode === c) ?? null,
+    listMemberships: async () => db.members,
+    claimMembership: async (u, code, founder) => {
+      const have = db.members.find((m) => m.userId === u);
+      if (have) return have;
+      const n = founder && db.used < 100 ? ++db.used : null;
+      const m = { userId: u, founderNumber: n, freeUntil: n ? addMonth(seed.now ?? new Date()).toISOString() : null, referralCode: String(100000 + db.members.length), referredCode: code };
+      db.members.push(m);
+      return m;
+    },
+    countReferrals: async (c) => db.members.filter((m) => m.referredCode === c).length,
+    foundersUsed: async () => db.used,
+    listAdminIds: async () => db.profiles.filter((p) => p.isAdmin).map((p) => p.id),
     listProfiles: async () => db.profiles,
     activityCounts: async () => ({
       accepted: db.partnerships.filter((p) => p.status === "accepted").length,

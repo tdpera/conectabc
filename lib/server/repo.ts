@@ -1,7 +1,7 @@
 import "server-only";
 import type { Repo } from "../core";
 import { RuleError } from "../rules";
-import type { Business, BusinessInput, Message, Partnership, Subscription } from "../types";
+import type { Business, BusinessInput, Membership, Message, Partnership, Subscription } from "../types";
 import { adminClient } from "./supabase";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -29,6 +29,10 @@ const P = (r: any): Partnership => ({
 const S = (r: any): Subscription => ({
   userId: r.user_id, status: r.status, currentPeriodEnd: r.current_period_end, trialEnd: r.trial_end,
   amount: r.amount ?? 0, currency: r.currency ?? "brl",
+});
+
+const MB = (r: any): Membership => ({
+  userId: r.user_id, founderNumber: r.founder_number, freeUntil: r.free_until, referralCode: r.referral_code, referredCode: r.referred_code,
 });
 
 function ok(res: { data: any; error: any }): any {
@@ -133,6 +137,34 @@ export const supabaseRepo: Repo = {
   },
   async listSubscriptions() {
     return (await pages((a, z) => db().from("subscriptions").select("*").order("user_id").range(a, z))).map(S);
+  },
+  async getMembership(userId) {
+    const r = ok(await db().from("memberships").select("*").eq("user_id", userId).maybeSingle());
+    return r ? MB(r) : null;
+  },
+  async getMembershipByCode(code) {
+    const r = ok(await db().from("memberships").select("*").eq("referral_code", code).maybeSingle());
+    return r ? MB(r) : null;
+  },
+  async listMemberships() {
+    return (await pages((a, z) => db().from("memberships").select("*").order("user_id").range(a, z))).map(MB);
+  },
+  async claimMembership(userId, code, founder) {
+    const res = await db().rpc("claim_membership", { p_user: userId, p_code: code, p_founder: founder });
+    if (res.error?.message?.includes("codigo_invalido")) throw new RuleError("Código de indicação inválido. Confira ou deixe em branco.");
+    const r = ok(res);
+    return MB(Array.isArray(r) ? r[0] : r);
+  },
+  async countReferrals(code) {
+    const res = await db().from("memberships").select("*", { count: "exact", head: true }).eq("referred_code", code);
+    ok(res);
+    return res.count ?? 0;
+  },
+  async foundersUsed() {
+    return ok(await db().from("founder_offer").select("used").single()).used;
+  },
+  async listAdminIds() {
+    return ok(await db().from("profiles").select("id").eq("is_admin", true)).map((r: any) => r.id);
   },
   async listProfiles() {
     return (await pages((a, z) => db().from("profiles").select("*").order("created_at", { ascending: false }).order("id").range(a, z))).map((r) => ({

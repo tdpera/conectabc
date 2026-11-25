@@ -17,6 +17,7 @@ import { Cover } from "@/components/ui/cover";
 import { Skeleton } from "@/components/ui/misc";
 import { toast } from "@/components/ui/toast";
 import { celebrate } from "@/components/partner/propose-modal";
+import { ReferralCard } from "@/components/app/referral-card";
 import { now } from "@/lib/clock";
 
 const ease = [0.16, 1, 0.3, 1] as const;
@@ -94,7 +95,7 @@ function Dashboard() {
             <ProgressRing value={progress} />
             <div className="flex-1">
               <p className="font-display text-2xl font-bold">{biz ? "Quase lá! Complete sua presença na rede" : "Primeiro passo: cadastre seu negócio"}</p>
-              <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+              <ul className="mt-4 grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-2">
                 {steps.map((s) => (
                   <li key={s.label}>
                     {s.href && !s.done ? (
@@ -115,7 +116,9 @@ function Dashboard() {
         </motion.section>
       )}
 
-      <div className="mt-8 grid gap-4 sm:grid-cols-3">
+      <ReferralCard />
+
+      <div className="mt-8 grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-3">
         {[
           { label: "mensagens não lidas", v: unread, icon: MessagesSquare, href: "/painel/conversas", tone: "from-aqua/20" },
           { label: "propostas aguardando você", v: received.length, icon: Sparkles, href: "/painel/parcerias", tone: "from-coral/20" },
@@ -134,7 +137,7 @@ function Dashboard() {
         ))}
       </div>
 
-      <div className="mt-8 grid gap-6 lg:grid-cols-2">
+      <div className="mt-8 grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-2">
         <Panel title="Propostas para você" href="/painel/parcerias" delay={0.3}>
           {!parts ? (
             <Skeleton className="h-28" />

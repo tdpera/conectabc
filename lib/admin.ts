@@ -23,12 +23,13 @@ export function csvCell(v: string | null | undefined): string {
 }
 
 export function toCsv(rows: AdminRow[]): string {
-  const head = ["Negócio", "Categoria", "Descrição", "Dono", "E-mail", "Telefone", "WhatsApp", "Instagram", "Site", "Endereço", "Bairro", "Cidade", "Entrou em", "Assinatura"];
+  const head = ["Negócio", "Categoria", "Descrição", "Dono", "E-mail", "Telefone", "WhatsApp", "Instagram", "Site", "Endereço", "Bairro", "Cidade", "Entrou em", "Assinatura", "Vaga gratuita", "Grátis até", "Código", "Indicado por", "Indicações"];
   const body = rows.map((r) => {
     const b = r.business;
     return [
       b?.name ?? "(sem negócio cadastrado)", b ? category(b.category).label : "", b?.description, r.ownerName, r.ownerEmail, b?.phone, b?.whatsapp, b?.instagram,
       b?.website, b?.address, b?.neighborhood, b?.city, r.joinedAt?.slice(0, 10), STATUS_INFO[r.subscription].label,
+      r.membership?.founderNumber?.toString(), r.membership?.freeUntil?.slice(0, 10), r.membership?.referralCode, r.membership?.referredCode, String(r.referrals),
     ];
   });
   return "\ufeff" + [head, ...body].map((l) => l.map(csvCell).join(";")).join("\r\n");

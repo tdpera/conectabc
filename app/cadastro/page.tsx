@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { clsx } from "clsx";
 import { AuthShell, Divider, GoogleIcon } from "@/components/auth/shell";
@@ -9,6 +9,8 @@ import { Field } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { backend } from "@/lib/backend";
 import { useApp } from "@/components/app/providers";
+import { ReferralField, savedCode, saveCode } from "@/components/app/referral-field";
+import { normalizeCode, PRICE_LABEL } from "@/lib/plan";
 
 function strength(pw: string) {
   let s = 0;
@@ -24,7 +26,9 @@ const COLOR = ["bg-coral", "bg-coral", "bg-amber-400", "bg-aqua", "bg-teal"];
 
 export default function Page() {
   const router = useRouter();
-  const { refresh } = useApp();
+  const { refresh, offer } = useApp();
+  const [code, setCode] = useState("");
+  useEffect(() => setCode(savedCode()), []);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -32,13 +36,25 @@ export default function Page() {
   const [err, setErr] = useState("");
   const st = strength(password);
 
+  /** Código em branco é válido; errado, avisa antes de criar a conta. */
+  const checkCode = async () => {
+    const c = normalizeCode(code);
+    if (code.trim() && (!c || !(await backend.checkReferral(c)))) {
+      setErr("Código de indicação inválido. Confira ou deixe em branco.");
+      return false;
+    }
+    saveCode(c);
+    return true;
+  };
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErr("");
     if (password.length < 8) return setErr("A senha precisa de pelo menos 8 caracteres.");
     setBusy("pw");
     try {
-      const r = await backend.signUp(email, password, name);
+      if (!(await checkCode())) return;
+      const r = await backend.signUp(email, password, name, normalizeCode(code));
       if (r.needsVerification) router.push(`/verificar?email=${encodeURIComponent(email)}`);
       else {
         await refresh();
@@ -54,7 +70,7 @@ export default function Page() {
   return (
     <AuthShell
       title="Criar conta"
-      subtitle={<>Grátis até 15/01/2027. Depois, R$ 49,99/mês — sem fidelidade.</>}
+      subtitle={offer?.left ? <>Primeiro mês grátis para os {offer.limit} primeiros negócios, sem cartão. Depois, {PRICE_LABEL}/mês, sem fidelidade.</> : <>{PRICE_LABEL}/mês, sem fidelidade.</>}
       footer={<>Já tem conta? <Link href="/entrar" className="font-semibold text-teal hover:underline">Entrar</Link></>}
     >
       <Button
@@ -66,6 +82,7 @@ export default function Page() {
         onClick={async () => {
           setBusy("google");
           try {
+            if (!(await checkCode())) return;
             await backend.signInWithGoogle();
             const s = await refresh();
             if (s.user) router.push("/painel");
@@ -97,6 +114,7 @@ export default function Page() {
             </div>
           )}
         </div>
+        <ReferralField value={code} onChange={setCode} />
         {err && <p className="rounded-xl bg-coral/10 px-3 py-2 text-sm text-coral-deep" role="alert">{err}</p>}
         <Button type="submit" variant="primary" size="lg" className="w-full" loading={busy === "pw"}>Criar minha conta</Button>
         <p className="text-center text-xs text-ink-faint">Enviaremos um código de 6 dígitos para confirmar seu e-mail.</p>

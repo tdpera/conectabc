@@ -1,18 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { earlySignupOpen, isLaunched, LAUNCH_AT } from "@/lib/launch";
+import { addMonth, checkoutTrialEnd, normalizeCode } from "@/lib/plan";
 import { formatDistance, haversine } from "@/lib/geo";
 import { parseBusiness, subscriptionEntitles, toPublic } from "@/lib/rules";
 import { biz } from "./memory-repo";
 
-describe("lançamento", () => {
-  it("é 15/01/2027 00:00 em Brasília", () => {
-    expect(LAUNCH_AT.toISOString()).toBe("2027-01-15T03:00:00.000Z");
-    expect(isLaunched(new Date("2027-01-15T02:59:59Z"))).toBe(false);
-    expect(isLaunched(new Date("2027-01-15T03:00:00Z"))).toBe(true);
+describe("plano", () => {
+  it("um mês de calendário, sem estourar fevereiro", () => {
+    expect(addMonth(new Date("2027-01-31T10:00:00Z")).toISOString()).toBe("2027-02-28T10:00:00.000Z");
+    expect(addMonth(new Date("2026-12-10T10:00:00Z")).toISOString()).toBe("2027-01-10T10:00:00.000Z");
   });
-  it("pausa o cadastro antecipado nas 48h finais", () => {
-    expect(earlySignupOpen(new Date("2027-01-13T02:59:00Z"))).toBe(true);
-    expect(earlySignupOpen(new Date("2027-01-13T03:00:00Z"))).toBe(false);
+  it("normaliza códigos", () => {
+    expect(normalizeCode(" a3-f9c2 ")).toBe("A3F9C2");
+    for (const c of ["", "abc", "1234567", null]) expect(normalizeCode(c)).toBeNull();
+  });
+  it("cobrança só depois do mês grátis, respeitando as 48 h do Stripe", () => {
+    const now = new Date("2026-12-01T00:00:00Z");
+    expect(checkoutTrialEnd(null, now)).toBeNull();
+    expect(checkoutTrialEnd({ freeUntil: "2026-11-30T00:00:00Z" }, now)).toBeNull();
+    expect(checkoutTrialEnd({ freeUntil: "2026-12-20T00:00:00Z" }, now)!.toISOString()).toBe("2026-12-20T00:00:00.000Z");
+    expect(checkoutTrialEnd({ freeUntil: "2026-12-01T05:00:00Z" }, now)!.toISOString()).toBe("2026-12-03T01:00:00.000Z");
   });
 });
 
@@ -54,12 +60,13 @@ describe("dados públicos", () => {
 describe("direito de acesso", () => {
   const after = new Date("2027-02-01T00:00:00Z");
   const sub = (status: string, extra = {}) => ({ status, trialEnd: null, amount: 4999, currency: "brl", ...extra }) as never;
-  it("todos têm acesso antes do lançamento", () => expect(subscriptionEntitles(null, new Date("2026-12-01"))).toBe(true));
-  it("depois, só assinatura ativa de R$ 49,99 em BRL", () => {
+  it("só assinatura ativa de R$ 49,99 em BRL", () => {
     expect(subscriptionEntitles(null, after)).toBe(false);
     expect(subscriptionEntitles(sub("active"), after)).toBe(true);
     expect(subscriptionEntitles(sub("active", { amount: 100 }), after)).toBe(false);
     expect(subscriptionEntitles(sub("active", { currency: "usd" }), after)).toBe(false);
+    expect(subscriptionEntitles(sub("trialing", { trialEnd: "2027-02-10T00:00:00Z" }), after)).toBe(true);
+    expect(subscriptionEntitles(sub("trialing", { trialEnd: "2027-01-10T00:00:00Z" }), after)).toBe(false);
     for (const s of ["past_due", "unpaid", "canceled", "paused", "incomplete"]) expect(subscriptionEntitles(sub(s), after)).toBe(false);
   });
 });

@@ -3,13 +3,13 @@
  * servidor (Supabase, service role) quanto no modo demonstração (memória local).
  * Toda ação re-verifica dono, negócio e direito de acesso — nada é confiado ao cliente.
  */
-import { isLaunched, PRICE_CENTS } from "./launch";
+import { FOUNDER_LIMIT, freeActive, normalizeCode, PRICE_CENTS } from "./plan";
 import {
   assertCanCancel, assertCanMessage, assertCanPropose, assertCanRespond, introSchema,
-  messageSchema, parseBusiness, parseOrThrow, RuleError, toPublic,
+  messageSchema, parseBusiness, parseOrThrow, RuleError, subscriptionEntitles, toPublic,
 } from "./rules";
 import type {
-  AdminStats, Business, BusinessInput, Conversation, Message, Partnership,
+  AdminStats, Business, BusinessInput, Conversation, Membership, Message, Offer, Partnership,
   PartnershipStatus, PartnershipType, Profile, PublicBusiness, Subscription,
 } from "./types";
 import type { DirectoryResult, PartnershipsResult, DirectoryEntry } from "./backend/types";
@@ -39,6 +39,14 @@ export interface Repo {
 
   getSubscription(userId: string): Promise<Subscription | null>;
   listSubscriptions(): Promise<Subscription[]>;
+  getMembership(userId: string): Promise<Membership | null>;
+  getMembershipByCode(code: string): Promise<Membership | null>;
+  listMemberships(): Promise<Membership[]>;
+  /** Idempotente e atômico: a vaga gratuita é numerada e nunca passa do limite. */
+  claimMembership(userId: string, code: string | null, founder: boolean): Promise<Membership>;
+  countReferrals(code: string): Promise<number>;
+  foundersUsed(): Promise<number>;
+  listAdminIds(): Promise<string[]>;
   listProfiles(): Promise<Profile[]>;
   activityCounts(): Promise<{ accepted: number; pending: number; messages: number }>;
 }
@@ -50,6 +58,7 @@ export interface Ctx {
   now: Date;
   /** Verifica (ao vivo, no servidor) se o dono tem acesso à rede. */
   isEntitled(userId: string): Promise<boolean>;
+  onMembership?(userId: string): void;
 }
 
 async function requireUser(ctx: Ctx): Promise<string> {
@@ -59,45 +68,62 @@ async function requireUser(ctx: Ctx): Promise<string> {
 
 async function requireEntitled(ctx: Ctx): Promise<string> {
   const uid = await requireUser(ctx);
-  if (!(await ctx.isEntitled(uid))) throw new RuleError("Sua assinatura não está ativa.", 402);
+  if (!(await ctx.isEntitled(uid))) {
+    const has = await ctx.repo.getBusinessByOwner(uid);
+    throw new RuleError(has ? "Seu acesso não está ativo. Assine para continuar." : "Cadastre seu negócio para entrar na rede.", has ? 402 : 403);
+  }
   return uid;
 }
 
-async function filterEntitled(ctx: Ctx, list: Business[]): Promise<Business[]> {
-  if (!isLaunched(ctx.now)) return list;
-  const owners = [...new Set(list.map((b) => b.ownerId))];
-  const ok = new Set<string>();
-  await Promise.all(owners.map(async (o) => { if (await ctx.isEntitled(o)) ok.add(o); }));
-  return list.filter((b) => ok.has(b.ownerId));
+/** Donos com mês grátis ou assinatura em dia (estado gravado pelo webhook), sem consultar o Stripe um a um. */
+async function entitledOwners(ctx: Ctx): Promise<Set<string>> {
+  const [members, subs, admins] = await Promise.all([ctx.repo.listMemberships(), ctx.repo.listSubscriptions(), ctx.repo.listAdminIds()]);
+  return new Set([
+    ...admins,
+    ...members.filter((m) => freeActive(m, ctx.now)).map((m) => m.userId),
+    ...subs.filter((s) => subscriptionEntitles(s, ctx.now)).map((s) => s.userId),
+  ]);
 }
 
 export async function directory(ctx: Ctx): Promise<DirectoryResult> {
-  const launched = isLaunched(ctx.now);
-  if (!ctx.userId) {
-    if (launched) return { businesses: [], full: false, locked: true, paywalled: false };
-    const all = (await ctx.repo.listBusinesses(DIRECTORY_LIMIT)).filter((b) => b.isVisible);
-    return { businesses: all.map(toPublic), full: false, locked: false, paywalled: false };
-  }
-  if (!(await ctx.isEntitled(ctx.userId))) return { businesses: [], full: false, locked: false, paywalled: true };
-  const all = (await ctx.repo.listBusinesses(DIRECTORY_LIMIT)).filter((b) => b.isVisible);
-  return { businesses: await filterEntitled(ctx, all), full: true, locked: false, paywalled: false };
+  const full = !!ctx.userId && (await ctx.isEntitled(ctx.userId));
+  const [all, ok] = await Promise.all([ctx.repo.listBusinesses(DIRECTORY_LIMIT), entitledOwners(ctx)]);
+  const list = all.filter((b) => b.isVisible && ok.has(b.ownerId));
+  return { businesses: full ? list : list.map(toPublic), full, paywalled: !!ctx.userId && !full };
 }
 
 export async function businessById(ctx: Ctx, id: string): Promise<DirectoryEntry | null> {
   const b = await ctx.repo.getBusiness(id);
   if (!b) return null;
   if (ctx.userId && b.ownerId === ctx.userId) return b; // o dono sempre vê o próprio
-  if (!b.isVisible) return null;
-  if (!ctx.userId) return isLaunched(ctx.now) ? null : toPublic(b);
-  if (!(await ctx.isEntitled(ctx.userId))) return null;
-  if (isLaunched(ctx.now) && !(await ctx.isEntitled(b.ownerId))) return null;
-  return b;
+  if (!b.isVisible || !(await ctx.isEntitled(b.ownerId))) return null;
+  return ctx.userId && (await ctx.isEntitled(ctx.userId)) ? b : toPublic(b);
 }
 
-export async function saveMyBusiness(ctx: Ctx, input: unknown): Promise<Business> {
+export async function checkReferral(ctx: Ctx, code: unknown): Promise<{ businessName: string } | null> {
+  const c = normalizeCode(code);
+  const m = c && (await ctx.repo.getMembershipByCode(c));
+  if (!m || m.userId === ctx.userId) return null;
+  const b = await ctx.repo.getBusinessByOwner(m.userId);
+  return b ? { businessName: b.name } : null;
+}
+
+export async function offer(ctx: Ctx): Promise<Offer> {
+  return { limit: FOUNDER_LIMIT, left: Math.max(0, FOUNDER_LIMIT - (await ctx.repo.foundersUsed())) };
+}
+
+export async function saveMyBusiness(ctx: Ctx, input: unknown, referralCode?: unknown): Promise<Business> {
   const uid = await requireUser(ctx); // editar o próprio negócio nunca exige assinatura
   const data = parseBusiness(input);
   const existing = await ctx.repo.getBusinessByOwner(uid);
+  let code: string | null = null;
+  if (!existing && typeof referralCode === "string" && referralCode.trim()) {
+    code = normalizeCode(referralCode);
+    if (!code || !(await checkReferral(ctx, code))) throw new RuleError("Código de indicação inválido. Confira ou deixe em branco.");
+  }
+  // Entra na rede antes de inserir: se algo falhar, salvar de novo não gasta outra vaga.
+  await ctx.repo.claimMembership(uid, code, !ctx.isAdmin);
+  ctx.onMembership?.(uid);
   if (existing) return ctx.repo.updateBusiness(existing.id, uid, data);
   return ctx.repo.insertBusiness({ ...data, ownerId: uid, isVisible: true });
 }
@@ -107,7 +133,7 @@ async function counterpart(ctx: Ctx, otherBusinessId: string) {
   const mine = await ctx.repo.getBusinessByOwner(uid);
   const other = await ctx.repo.getBusiness(otherBusinessId);
   assertCanMessage(mine, other);
-  if (isLaunched(ctx.now) && !(await ctx.isEntitled(other!.ownerId)))
+  if (!(await ctx.isEntitled(other!.ownerId)))
     throw new RuleError("Este negócio não está disponível na rede no momento.", 403);
   return { uid, mine: mine!, other: other! };
 }
@@ -200,20 +226,26 @@ export async function cancel(ctx: Ctx, id: string): Promise<Partnership> {
 
 export async function adminStats(ctx: Ctx, config: AdminStats["config"], mode: AdminStats["mode"]): Promise<AdminStats> {
   if (!ctx.isAdmin) throw new RuleError("Acesso restrito.", 403);
-  const [all, subs, profiles, counts] = await Promise.all([
+  const [all, subs, profiles, counts, members, foundersUsed] = await Promise.all([
     ctx.repo.listBusinesses(DIRECTORY_LIMIT), ctx.repo.listSubscriptions(), ctx.repo.listProfiles(), ctx.repo.activityCounts(),
+    ctx.repo.listMemberships(), ctx.repo.foundersUsed(),
   ]);
   const byUser = new Map(subs.map((s) => [s.userId, s]));
   const byOwner = new Map(all.map((b) => [b.ownerId, b]));
+  const memberOf = new Map(members.map((m) => [m.userId, m]));
+  const refs = new Map<string, number>();
+  for (const m of members) if (m.referredCode) refs.set(m.referredCode, (refs.get(m.referredCode) ?? 0) + 1);
   const known = new Set(profiles.map((p) => p.id));
   const row = (id: string, p: Profile | null, b: Business | null): AdminStats["rows"][number] => ({
     userId: id, ownerName: p?.name ?? "", ownerEmail: p?.email ?? "—", joinedAt: p?.createdAt ?? b?.createdAt ?? null,
     business: b, subscription: byUser.get(id)?.status ?? "none",
+    membership: memberOf.get(id) ?? null, freeActive: freeActive(memberOf.get(id), ctx.now),
+    referrals: refs.get(memberOf.get(id)?.referralCode ?? "") ?? 0,
   });
   // administradores sem negócio não são clientes; negócios sem perfil ainda aparecem
-  const members = profiles.filter((p) => !p.isAdmin || byOwner.has(p.id));
+  const accounts = profiles.filter((p) => !p.isAdmin || byOwner.has(p.id));
   const rows = [
-    ...members.map((p) => row(p.id, p, byOwner.get(p.id) ?? null)),
+    ...accounts.map((p) => row(p.id, p, byOwner.get(p.id) ?? null)),
     ...all.filter((b) => !known.has(b.ownerId)).map((b) => row(b.ownerId, null, b)),
   ].sort((a, b) => (b.joinedAt ?? "").localeCompare(a.joinedAt ?? ""));
   const active = subs.filter((s) => s.status === "active").length;
@@ -224,8 +256,10 @@ export async function adminStats(ctx: Ctx, config: AdminStats["config"], mode: A
     partnershipsPending: counts.pending,
     messages: counts.messages,
     activeSubscribers: active,
-    earlyRegistrations: subs.filter((s) => s.status === "trialing").length,
-    projectedMrr: (active + (isLaunched(ctx.now) ? 0 : subs.filter((s) => s.status === "trialing").length)) * PRICE_CENTS,
+    foundersUsed,
+    foundersLimit: FOUNDER_LIMIT,
+    referredBusinesses: members.filter((m) => m.referredCode).length,
+    projectedMrr: (active + subs.filter((s) => s.status === "trialing").length) * PRICE_CENTS,
     config,
     mode,
     rows,

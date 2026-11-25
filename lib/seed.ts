@@ -1,5 +1,5 @@
-import type { Business, CategoryId, Message, Partnership, Subscription } from "./types";
-import { LAUNCH_AT, PRICE_CENTS } from "./launch";
+import type { Business, CategoryId, Membership, Message, Partnership, Subscription } from "./types";
+import { PRICE_CENTS } from "./plan";
 
 /**
  * Dados FICTÍCIOS do modo demonstração. Nenhum destes negócios existe de verdade;
@@ -78,9 +78,13 @@ export interface DemoDb {
   partnerships: Partnership[];
   subscriptions: Subscription[];
   billingEvents: string[];
+  memberships: Membership[];
+  foundersUsed: number;
+  pendingCodes: Record<string, string>;
+  seededAt: number;
 }
 
-export const DEMO_DB_VERSION = 3;
+export const DEMO_DB_VERSION = 4;
 
 export function buildSeed(base = Date.now()): DemoDb {
   const users = [DEMO_USER, DEMO_ADMIN];
@@ -94,7 +98,7 @@ export function buildSeed(base = Date.now()): DemoDb {
         userId: ownerId,
         status: sub,
         currentPeriodEnd: sub === "active" ? new Date(base + 20 * 86400000).toISOString() : null,
-        trialEnd: sub === "trialing" ? LAUNCH_AT.toISOString() : null,
+        trialEnd: sub === "trialing" ? new Date(base + 18 * 86400000).toISOString() : null,
         amount: PRICE_CENTS,
         currency: "brl",
       });
@@ -124,6 +128,15 @@ export function buildSeed(base = Date.now()): DemoDb {
       createdAt: iso(i === 0 ? 40 : (i * 7) % 58, i, base),
     };
   });
+
+  // Todos entraram como fundadores; alguns por indicação do Café Maré Alta.
+  const memberships: Membership[] = businesses.map((b, i) => ({
+    userId: b.ownerId,
+    founderNumber: i + 1,
+    freeUntil: new Date(base + 18 * 86400000).toISOString(),
+    referralCode: i === 0 ? "MARE10" : `BC${String(1000 + i)}`,
+    referredCode: [4, 9, 15].includes(i) ? "MARE10" : null,
+  }));
 
   const B = (n: number) => businesses[n - 1];
   const me = B(1);
@@ -174,5 +187,6 @@ export function buildSeed(base = Date.now()): DemoDb {
     p("p-7", B(11), B(36), "promocao", "Noite de vinhos no hotel.", "accepted", 7),
   ];
 
-  return { version: DEMO_DB_VERSION, users, businesses, messages, partnerships, subscriptions, billingEvents: [] };
+  return { version: DEMO_DB_VERSION, users, businesses, messages, partnerships, subscriptions, billingEvents: [],
+    memberships, foundersUsed: memberships.length, pendingCodes: {}, seededAt: base };
 }

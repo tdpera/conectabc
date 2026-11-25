@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { earlySignupOpen, isLaunched, LAUNCH_AT } from "@/lib/launch";
+import { checkoutTrialEnd } from "@/lib/plan";
 import { serverCtx } from "@/lib/server/ctx";
-import { getStripe, siteUrl } from "@/lib/server/stripe";
+import { getStripe, referralCoupon, siteUrl } from "@/lib/server/stripe";
 import { adminClient } from "@/lib/server/supabase";
 
 export const dynamic = "force-dynamic";
@@ -13,10 +13,9 @@ export async function POST(req: Request) {
   const ctx = await serverCtx();
   if (!ctx.userId) return NextResponse.json({ error: "Entre na sua conta." }, { status: 401 });
 
-  const now = new Date();
-  const launched = isLaunched(now);
-  if (!launched && !earlySignupOpen(now))
-    return NextResponse.json({ error: "O cadastro antecipado está pausado nas 48h finais. Volte no dia do lançamento." }, { status: 409 });
+  const member = await ctx.repo.getMembership(ctx.userId);
+  if (!member) return NextResponse.json({ error: "Cadastre seu negócio antes de assinar." }, { status: 409 });
+  const trialEnd = checkoutTrialEnd(member, ctx.now);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = adminClient() as any;
@@ -31,17 +30,21 @@ export async function POST(req: Request) {
     await db.from("subscriptions").upsert({ user_id: ctx.userId, stripe_customer_id: customer, status: "incomplete" }, { onConflict: "user_id" });
   }
 
+  // Desconto de indicação: só na primeira assinatura.
+  const coupon = member.referredCode && !row?.stripe_subscription_id ? await referralCoupon(stripe) : null;
+
   const base = siteUrl(req);
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
     customer,
     client_reference_id: ctx.userId,
     line_items: [{ price, quantity: 1 }],
+    ...(coupon ? { discounts: [{ coupon }] } : {}),
     payment_method_collection: "always",
     locale: "pt-BR",
     subscription_data: {
       metadata: { user_id: ctx.userId },
-      ...(launched ? {} : { trial_end: Math.floor(LAUNCH_AT.getTime() / 1000) }),
+      ...(trialEnd ? { trial_end: Math.floor(trialEnd.getTime() / 1000) } : {}),
     },
     success_url: `${base}/painel/assinatura?status=sucesso`,
     cancel_url: `${base}/painel/assinatura?status=cancelado`,

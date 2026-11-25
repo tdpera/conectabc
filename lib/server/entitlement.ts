@@ -1,6 +1,6 @@
 import "server-only";
 import type Stripe from "stripe";
-import { isLaunched, PRICE_CENTS } from "../launch";
+import { freeActive, PRICE_CENTS } from "../plan";
 import { subscriptionEntitles } from "../rules";
 import type { Subscription, SubscriptionStatus } from "../types";
 import { getStripe } from "./stripe";
@@ -44,10 +44,9 @@ export async function upsertSubscription(sub: Subscription, extra: { customerId?
 
 /**
  * Direito de acesso verificado AO VIVO no Stripe (com cache de 2 minutos).
- * Antes do lançamento, todo membro logado tem acesso.
+ * O mês grátis dos primeiros negócios vale por si só, sem cartão.
  */
 export async function isEntitled(userId: string, now = new Date()): Promise<boolean> {
-  if (!isLaunched(now)) return true;
   const hit = cache.get(userId);
   if (hit && Date.now() - hit.at < TTL) return hit.ok;
 
@@ -55,6 +54,9 @@ export async function isEntitled(userId: string, now = new Date()): Promise<bool
   const db = adminClient() as any;
   const { data: profile } = await db.from("profiles").select("is_admin").eq("id", userId).maybeSingle();
   if (profile?.is_admin) return remember(userId, true);
+
+  const { data: m } = await db.from("memberships").select("free_until").eq("user_id", userId).maybeSingle();
+  if (freeActive({ freeUntil: m?.free_until ?? null }, now)) return true;
 
   const { data: row } = await db.from("subscriptions").select("*").eq("user_id", userId).maybeSingle();
   const stripe = getStripe();
@@ -75,6 +77,8 @@ export async function isEntitled(userId: string, now = new Date()): Promise<bool
 }
 
 function remember(userId: string, ok: boolean) {
+  // só guarda o "sim": quem acabou de pagar entra na hora, em qualquer instância
+  if (!ok) return false;
   cache.set(userId, { at: Date.now(), ok });
   return ok;
 }

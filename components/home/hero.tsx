@@ -8,8 +8,9 @@ import { useGSAP } from "@gsap/react";
 import { motion, useMotionValue, useSpring, useTransform } from "motion/react";
 import { ArrowRight, ChevronDown, MapPinned } from "lucide-react";
 import { BayMap, pinsFrom } from "./bay-map";
-import { decorativePins, type BayPin } from "@/lib/bay";
+import { type BayPin } from "@/lib/bay";
 import { LinkButton, Magnetic } from "@/components/ui/button";
+import { useApp } from "@/components/app/providers";
 import { INTRO_DONE } from "@/components/app/header";
 import type { DirectoryEntry } from "@/lib/backend/types";
 import { initialIntro, initialPointer, type IntroState, type PointerState } from "@/lib/intro-state";
@@ -72,7 +73,8 @@ function webglOk() {
   }
 }
 
-export function Hero({ businesses, ready, locked }: { businesses: DirectoryEntry[]; ready: boolean; locked: boolean }) {
+export function Hero({ businesses, ready }: { businesses: DirectoryEntry[]; ready: boolean }) {
+  const { offer } = useApp();
   const root = useRef<HTMLElement>(null);
   const reveal = useRef(0);
   const mouse = useRef<[number, number]>([0.5, 0.5]);
@@ -96,9 +98,8 @@ export function Hero({ businesses, ready, locked }: { businesses: DirectoryEntry
 
   const pins: BayPin[] = useMemo(() => {
     if (!ready) return [];
-    if (locked) return decorativePins(30);
     return pinsFrom(businesses);
-  }, [businesses, ready, locked]);
+  }, [businesses, ready]);
   const count = businesses.length;
 
   // Paralaxe do mapa com o mouse
@@ -303,7 +304,7 @@ export function Hero({ businesses, ready, locked }: { businesses: DirectoryEntry
             pointer={pointer}
             pins={pins}
             active={active}
-            interactive={!locked}
+            interactive
             onReady={() => setSceneReady(true)}
             onHover={(id) => {
               hoverId.current = id;
@@ -323,7 +324,7 @@ export function Hero({ businesses, ready, locked }: { businesses: DirectoryEntry
       {mode === "svg" && (
       <div className="hero-map pointer-events-none absolute inset-x-0 bottom-[-8%] top-[34%] opacity-70 sm:top-[28%] lg:inset-y-0 lg:left-[44%] lg:right-[-6%] lg:top-0 lg:opacity-100" style={{ perspective: 1200 }}>
         <motion.div className="pointer-events-auto mx-auto h-full w-full max-w-[720px]" style={{ rotateX: rx, rotateY: ry, transformStyle: "preserve-3d" }}>
-          {ready && <BayMap pins={pins} className="h-full w-full" interactive={!locked} />}
+          {ready && <BayMap pins={pins} className="h-full w-full" interactive />}
         </motion.div>
       </div>
       )}
@@ -339,9 +340,7 @@ export function Hero({ businesses, ready, locked }: { businesses: DirectoryEntry
               <span className="absolute inline-flex size-full animate-ping rounded-full bg-aqua opacity-70" />
               <span className="relative inline-flex size-2 rounded-full bg-aqua" />
             </span>
-            {locked ? (
-              "Rede exclusiva para assinantes"
-            ) : count > 0 ? (
+            {count > 0 ? (
               <span>
                 <strong className="tabular-nums">{count}</strong> {count === 1 ? "negócio já está" : "negócios já estão"} na rede
               </span>
@@ -375,10 +374,10 @@ export function Hero({ businesses, ready, locked }: { businesses: DirectoryEntry
               </LinkButton>
             </Magnetic>
             <LinkButton href="/cadastro" variant="glass" size="lg">
-              Criar conta grátis <ArrowRight className="size-4" />
+              Criar conta <ArrowRight className="size-4" />
             </LinkButton>
           </div>
-          <p className="h-fade mt-5 text-sm text-white/50">Para donos de negócios, não para turistas. Grátis até 15/01/2027.</p>
+          <p className="h-fade mt-5 text-sm text-white/50">Para donos de negócios, não para turistas. {(!offer || offer.left > 0) && " Primeiro mês grátis para os 100 primeiros."}</p>
         </div>
       </div>
 

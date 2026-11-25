@@ -2,9 +2,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { backend, IS_DEMO } from "@/lib/backend";
 import { DEMO_EVENT } from "@/lib/backend/demo";
-import { initClock, now } from "@/lib/clock";
-import { isLaunched } from "@/lib/launch";
-import type { Session } from "@/lib/types";
+import { initClock } from "@/lib/clock";
+import type { Offer, Session } from "@/lib/types";
 import { Toaster } from "@/components/ui/toast";
 
 interface AppState {
@@ -12,7 +11,7 @@ interface AppState {
   loading: boolean;
   refresh: () => Promise<Session>;
   demo: boolean;
-  launched: boolean;
+  offer: Offer | null;
 }
 
 const Ctx = createContext<AppState | null>(null);
@@ -20,33 +19,27 @@ const Ctx = createContext<AppState | null>(null);
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  const [launched, setLaunched] = useState(false);
 
   const refresh = useCallback(async () => {
-    const s = await backend.getSession().catch(() => ({ user: null, business: null, subscription: null, entitled: false }) as Session);
+    const s = await backend.getSession().catch(() => ({ user: null, business: null, subscription: null, entitled: false, membership: null, referrals: 0, pendingCode: null, offer: null }) as Session);
     setSession(s);
     setLoading(false);
-    setLaunched(isLaunched(now()));
     return s;
   }, []);
 
   useEffect(() => {
     initClock(IS_DEMO);
     refresh();
-    const t = setInterval(() => setLaunched(isLaunched(now())), 30_000);
-    if (!IS_DEMO) return () => clearInterval(t);
+    if (!IS_DEMO) return;
     // Mantém abas da demo sincronizadas.
     const onStorage = (e: StorageEvent) => {
       if (e.key?.startsWith("conectabc:demo")) refresh();
     };
     window.addEventListener("storage", onStorage);
-    return () => {
-      clearInterval(t);
-      window.removeEventListener("storage", onStorage);
-    };
+    return () => window.removeEventListener("storage", onStorage);
   }, [refresh]);
 
-  const value = useMemo(() => ({ session, loading, refresh, demo: IS_DEMO, launched }), [session, loading, refresh, launched]);
+  const value = useMemo(() => ({ session, loading, refresh, demo: IS_DEMO, offer: session?.offer ?? null }), [session, loading, refresh]);
   return (
     <Ctx.Provider value={value}>
       {children}

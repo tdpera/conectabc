@@ -78,7 +78,8 @@ function Admin() {
     { label: "Contas criadas", v: s?.totalAccounts ?? 0, icon: UserPlus },
     { label: "Negócios cadastrados", v: s?.totalBusinesses ?? 0, icon: Store },
     { label: "Assinantes ativos", v: s?.activeSubscribers ?? 0, icon: Users },
-    { label: "Cadastros antecipados", v: s?.earlyRegistrations ?? 0, icon: Rocket },
+    { label: "Vagas grátis usadas (de 100)", v: s?.foundersUsed ?? 0, icon: Rocket },
+    { label: "Entraram por indicação", v: s?.referredBusinesses ?? 0, icon: UserPlus },
     { label: "Parcerias fechadas", v: s?.partnershipsAccepted ?? 0, icon: Handshake },
     { label: "Propostas em aberto", v: s?.partnershipsPending ?? 0, icon: Handshake },
     { label: "Mensagens trocadas", v: s?.messages ?? 0, icon: MessagesSquare },
@@ -114,7 +115,7 @@ function Admin() {
           <TrendingUp className="size-5" />
           <p className="font-display mt-4 text-4xl font-bold">{s ? money(s.projectedMrr) : "—"}</p>
           <p className="mt-1 text-sm text-white/75">Receita mensal projetada</p>
-          <p className="mt-2 text-[11px] text-white/60">Projeção simples: (ativos + antecipados) × R$ 49,99. Não considera impostos, taxas ou inadimplência.</p>
+          <p className="mt-2 text-[11px] text-white/60">Projeção simples: (ativos + cartões cadastrados) × R$ 49,99. Não considera descontos, impostos, taxas ou inadimplência.</p>
         </motion.div>
       </div>
 
@@ -179,7 +180,7 @@ function Admin() {
                       <td className="px-4 py-3 text-ink-soft">{r.business?.neighborhood || "—"}</td>
                       <td className="px-4 py-3">{r.business && r.business.lat !== null ? "📍" : <span className="text-ink-faint">—</span>}</td>
                       <td className="px-4 py-3 text-ink-soft">{r.joinedAt ? relativeDate(r.joinedAt, clockNow()) : "—"}</td>
-                      <td className="px-4 py-3"><Pill tone={STATUS_INFO[r.subscription].tone}>{STATUS_INFO[r.subscription].label}</Pill></td>
+                      <td className="px-4 py-3">{r.freeActive && r.subscription === "none" ? <Pill tone="success">Mês grátis</Pill> : <Pill tone={STATUS_INFO[r.subscription].tone}>{STATUS_INFO[r.subscription].label}</Pill>}</td>
                     </motion.tr>
                   ))}
               {s && !rows.length && <tr><td colSpan={6} className="px-4 py-10 text-center text-ink-faint">{s.rows.length ? "Nada encontrado com esses filtros." : "Nenhuma empresa cadastrada ainda."}</td></tr>}
@@ -279,6 +280,10 @@ function Details({ row }: { row: AdminRow }) {
     ["Horário", b.hours],
     ["Entrou", row.joinedAt && new Date(row.joinedAt).toLocaleDateString("pt-BR")],
     ["Assinatura", STATUS_INFO[row.subscription].label],
+    ["Vaga gratuita", row.membership?.founderNumber && `nº ${row.membership.founderNumber}, até ${new Date(row.membership.freeUntil!).toLocaleDateString("pt-BR")}`],
+    ["Código de indicação", row.membership?.referralCode],
+    ["Entrou com o código", row.membership?.referredCode],
+    ["Negócios que indicou", row.referrals || null],
     ["Parceiros ideais", b.idealPartners],
     ["Oferece", b.partnerOffer],
   ];

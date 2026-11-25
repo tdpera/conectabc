@@ -2,7 +2,7 @@ import { z } from "zod";
 import { validCoords } from "./geo";
 import { CATEGORIES } from "./categories";
 import type { Business, BusinessInput, Partnership, PartnershipStatus, PublicBusiness, Subscription } from "./types";
-import { isLaunched, LAUNCH_AT, PRICE_CENTS } from "./launch";
+import { PRICE_CENTS } from "./plan";
 
 export class RuleError extends Error {
   constructor(message: string, public status = 400) {
@@ -69,17 +69,13 @@ export function parseOrThrow<T>(schema: z.ZodType<T>, v: unknown): T {
   return r.data;
 }
 
-/** Status que garantem acesso à rede após o lançamento. */
+/** Assinaturas que garantem acesso à rede. */
 export function subscriptionEntitles(sub: Pick<Subscription, "status" | "trialEnd" | "amount" | "currency"> | null, now = new Date()): boolean {
-  if (!isLaunched(now)) return true;
   if (!sub) return false;
   if (sub.amount !== PRICE_CENTS || sub.currency.toLowerCase() !== "brl") return false;
   if (sub.status === "active") return true;
-  if (sub.status === "trialing" && sub.trialEnd) {
-    // Cadastro antecipado: trial termina no lançamento e a cobrança é processada.
-    return new Date(sub.trialEnd).getTime() <= LAUNCH_AT.getTime() + 86400000 && new Date(sub.trialEnd) > now;
-  }
-  return false;
+  // cartão cadastrado durante o mês grátis: a cobrança vem no fim do teste
+  return sub.status === "trialing" && !!sub.trialEnd && new Date(sub.trialEnd) > now;
 }
 
 export function samePair(p: Partnership, a: string, b: string) {

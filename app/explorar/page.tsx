@@ -12,7 +12,7 @@ import { CATEGORIES, category } from "@/lib/categories";
 import { formatDistance, haversine } from "@/lib/geo";
 import { normalize } from "@/lib/format";
 import { useApp } from "@/components/app/providers";
-import { LockScreen, NeedsBusiness, Paywall } from "@/components/app/gates";
+import { NeedsBusiness } from "@/components/app/gates";
 import { Cover } from "@/components/ui/cover";
 import { Empty, Skeleton } from "@/components/ui/misc";
 import { Button } from "@/components/ui/button";
@@ -32,7 +32,7 @@ export default function ExplorePage() {
 }
 
 function Explore() {
-  const { session, loading, launched } = useApp();
+  const { session, loading } = useApp();
   const params = useSearchParams();
   const router = useRouter();
   const [data, setData] = useState<DirectoryResult | null>(null);
@@ -57,7 +57,7 @@ function Explore() {
   useEffect(() => {
     if (loading) return;
     backend.listDirectory().then(setData).catch((e) => toast.error("Não foi possível carregar o mapa", e.message));
-  }, [loading, session?.user?.id, launched, session?.entitled]);
+  }, [loading, session?.user?.id, session?.entitled]);
 
   // Negócios novos aparecem sozinhos: atualiza ao voltar para a aba e a cada 20 s.
   useEffect(() => {
@@ -75,7 +75,7 @@ function Explore() {
       clearInterval(t);
       document.removeEventListener("visibilitychange", pull);
     };
-  }, [loading, session?.user?.id, launched, session?.entitled]);
+  }, [loading, session?.user?.id, session?.entitled]);
 
   // Volta de "Meu negócio" com ?salvo=1
   useEffect(() => {
@@ -140,9 +140,6 @@ function Explore() {
     hoverTimer.current = setTimeout(() => setFocus({ lat: b.lat!, lng: b.lng!, key: Date.now() }), 280);
   }, []);
 
-  if (!loading && data?.locked) return <LockScreen />;
-  if (!loading && data?.paywalled) return <Paywall />;
-
   const ready = !!data && !loading;
   const isMember = !!session?.user;
 
@@ -198,6 +195,11 @@ function Explore() {
             ))}
           </div>
           {isMember && !session?.business && <NeedsBusiness />}
+          {isMember && session?.business && data?.paywalled && (
+            <p className="rounded-xl bg-coral/10 px-3 py-2 text-xs text-ink">
+              Seu acesso não está ativo: os contatos estão bloqueados e seu negócio está oculto. <Link href="/painel/assinatura" className="font-semibold text-coral-deep underline">Assinar</Link>
+            </p>
+          )}
           {!isMember && ready && (
             <p className="rounded-xl bg-surface-2 px-3 py-2 text-xs text-ink-soft">
               Você está vendo a versão pública. <Link href="/cadastro" className="font-semibold text-teal hover:underline">Crie sua conta</Link> para ver contatos e conversar.

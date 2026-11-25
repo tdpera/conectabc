@@ -43,8 +43,8 @@ export const liveBackend: Backend = {
   async signIn(email, password) {
     authError((await sb().auth.signInWithPassword({ email, password })).error);
   },
-  async signUp(email, password, name) {
-    const { data, error } = await sb().auth.signUp({ email, password, options: { data: { name } } });
+  async signUp(email, password, name, referralCode) {
+    const { data, error } = await sb().auth.signUp({ email, password, options: { data: { name, ...(referralCode ? { referral_code: referralCode } : {}) } } });
     authError(error);
     return { needsVerification: !data.session };
   },
@@ -69,7 +69,8 @@ export const liveBackend: Backend = {
 
   listDirectory: () => rpc("directory"),
   getBusiness: (id) => rpc("business", { id }),
-  saveMyBusiness: (input) => rpc("saveBusiness", input),
+  saveMyBusiness: (input, referralCode) => rpc("saveBusiness", { ...input, referralCode }),
+  checkReferral: (code) => rpc("checkReferral", { code }),
   listConversations: () => rpc("conversations"),
   getThread: (id) => rpc("thread", { id }),
   sendMessage: (id, body) => rpc("send", { id, body }),

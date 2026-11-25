@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { Logo } from "./logo";
 import { useApp } from "./providers";
-import { CountdownBar } from "./countdown";
+import { OfferBar } from "./offer";
 import { buttonClass } from "@/components/ui/button";
 import { backend } from "@/lib/backend";
 import { toast } from "@/components/ui/toast";
@@ -32,7 +32,9 @@ function active(path: string, href: string) {
 export function Header() {
   const path = usePathname();
   const router = useRouter();
-  const { session, loading, refresh, launched } = useApp();
+  const { session, loading, refresh, offer } = useApp();
+  // até a oferta carregar, reserva a faixa para o layout não pular
+  const bar = loading || !!offer?.left;
   const [scrolled, setScrolled] = useState(false);
   const [menu, setMenu] = useState(false);
   const [account, setAccount] = useState(false);
@@ -62,8 +64,8 @@ export function Header() {
   }, [isHome]);
 
   useEffect(() => {
-    document.documentElement.style.setProperty("--hh", launched ? "64px" : "96px");
-  }, [launched]);
+    document.documentElement.style.setProperty("--hh", bar ? "96px" : "64px");
+  }, [bar]);
 
   useEffect(() => {
     setMenu(false);
@@ -88,7 +90,7 @@ export function Header() {
         transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
         className={clsx("fixed inset-x-0 top-0 z-[1000]", !introDone && "pointer-events-none")}
       >
-        {!launched && <CountdownBar dark={overHero} />}
+        {bar && (offer ? <OfferBar dark={overHero} /> : <div className="h-8 bg-abyss/70" />)}
         <div
           className={clsx(
             "transition-[background,border-color,backdrop-filter] duration-500",
